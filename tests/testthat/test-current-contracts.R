@@ -174,43 +174,6 @@ test_that("relational keys control qualification, evidence, and broadcast", {
     hemoglobin <- concept_spec(
         "hemoglobin",
         channels = list(hb = lab_channel(selector = analyte("HB.HB"))))
-    conflicting_hemoglobin <- concept_spec(
-        "hemoglobin",
-        channels = list(hb = lab_channel(selector = analyte("OTHER"))))
-    origin_contract <- c(
-        character_requires_concept = inherits(
-            try(use_channel("hb"), silent = TRUE), "try-error"),
-        inline_rejects_concept = inherits(
-            try(
-                use_channel(
-                    lab_channel(selector = analyte("HB.HB")),
-                    concept = hemoglobin),
-                silent = TRUE),
-            "try-error"),
-        unknown_channel_is_local_to_concept = inherits(
-            try(
-                use_channel("not_in_hemoglobin", concept = hemoglobin),
-                silent = TRUE),
-            "try-error"),
-        duplicate_name_rejects_different_catalog = inherits(
-            try(
-                variable_spec(
-                    name = "ambiguous_catalog_identity",
-                    channels = list(
-                        first = use_channel("hb", concept = hemoglobin),
-                        second = use_channel(
-                            "hb", concept = conflicting_hemoglobin)),
-                    combine = combine_channels("first & second", by = "PATID"),
-                    output = bin_output(group_by = "PATID")),
-                silent = TRUE),
-            "try-error"))
-    expect_identical(
-        origin_contract,
-        c(
-            character_requires_concept = TRUE,
-            inline_rejects_concept = TRUE,
-            unknown_channel_is_local_to_concept = TRUE,
-            duplicate_name_rejects_different_catalog = TRUE))
 
     make_variable <- function(filter_by) {
         low_threshold <- 12

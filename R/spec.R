@@ -67,26 +67,6 @@
     invisible(lapply(
         names(channels),
         function(alias) .activation_channel_definition(alias, channels[[alias]])))
-    catalogs <- lapply(channels, function(activation) {
-        if (is.character(activation$channel)) activation$concept else NULL
-    })
-    catalogs <- catalogs[!vapply(catalogs, is.null, logical(1))]
-    catalog_names <- vapply(catalogs, `[[`, character(1), "name")
-    duplicated_names <- unique(catalog_names[duplicated(catalog_names)])
-    for (catalog_name in duplicated_names) {
-        aliases <- names(catalogs)[catalog_names == catalog_name]
-        reference <- catalogs[[aliases[[1L]]]]
-        same_catalog <- vapply(
-            catalogs[aliases], identical, logical(1), y = reference)
-        if (!all(same_catalog)) {
-            stop(
-                "Concept name '", catalog_name,
-                "' refers to non-identical catalogs in activations: ",
-                paste(aliases, collapse = ", "),
-                ". Within one variable, a concept name must identify one catalog.",
-                call. = FALSE)
-        }
-    }
     channels
 }
 
