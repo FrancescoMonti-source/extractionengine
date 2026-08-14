@@ -1,9 +1,9 @@
 utils::globalVariables(c(
-    ".abs_days", ".norm_hit", "BIOL_ID", "DATEXAM", "ELTID", "EVTID",
+    ".abs_days", ".norm_hit", "DATEXAM", "ELTID", "EVTID",
     "PATID", "RECDATE", "accepted_value", "anchor_date", "attempt_status",
     "channel_coverage", "citation_warning", "code", "code_val",
     "context_after", "context_before", "days_from_anchor", "doc_date",
-    "doc_id", "evidence_ids", "evidence_ref", "evidence_refs", "field",
+    "doc_id", "evidence_ref", "evidence_refs", "field",
     "field_validity", "hit", "hit_ref", "hit_sentence", "hit_text",
     "in_corpus", "is_target", "n_candidate_rows",
     "n_eligible_documents", "n_fields", "n_invalid", "n_matching_rows",

@@ -197,7 +197,7 @@ concept_spec <- function(name, channels) {
 }
 
 .LLM_RESERVED_RESPONSE_FIELDS <- c(
-    "rationale", "evidence_ids",
+    "rationale", "snippet_ids",
     "task_id", "PATID", "EVTID", "ELTID", "source_EVTID",
     "variable", "channel", "source", "origin", "origin_kind",
     "origin_concept", "origin_channel",
@@ -734,7 +734,7 @@ print.ee_variable_spec <- function(x, ...) {
             cat("    response fields: ",
                 paste(.response_field_names(channel$response), collapse = ", "),
                 if (is.null(channel$rationale)) "" else ", rationale",
-                " (+ evidence_ids for audit)\n", sep = "")
+                " (+ snippet_ids for audit)\n", sep = "")
         }
     }
     combine <- resolved$combine

@@ -420,14 +420,13 @@
     spec <- EE_SOURCES[[source]]
     if (is.null(spec)) stop("Unknown prepared EDSAN source: ", source, call. = FALSE)
     roles <- source_roles(spec)
-    required <- c("source_result_id", "point_date", "analyte")
+    required <- c("point_date", "analyte")
     missing <- setdiff(required, names(roles))
     if (length(missing)) {
         stop("Prepared source '", source, "' lacks lab role(s): ",
              paste(missing, collapse = ", "), ".", call. = FALSE)
     }
     list(
-        result_id_col = roles$source_result_id,
         date_col = roles$point_date,
         analyte_col = roles$analyte)
 }
@@ -721,7 +720,6 @@
                 from_days = w[["from_days"]], to_days = w[["to_days"]],
                 group_by = channel_def$group_by,
                 filter_groups = channel_def$filter_groups,
-                result_id_col = bind$result_id_col,
                 date_col = bind$date_col,
                 analyte_col = bind$analyte_col,
                 field = channel_name, source = source)

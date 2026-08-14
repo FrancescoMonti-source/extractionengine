@@ -3,7 +3,6 @@ lab_fixture <- function() {
         PATID = "P1",
         EVTID = c("E1", "E1", "E2", "E2", "E3"),
         ELTID = paste0("L", 1:5),
-        BIOL_ID = paste0("B", 1:5),
         DATEXAM = as.Date("2026-01-01") + 0:4,
         TYPEANA = c("K.K", "K.K", "K.K", "ONE", "EMPTY"),
         NUMRES = c(4.2, NA, 5.1, 2, NA),
@@ -32,7 +31,7 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
 
     numeric_run <- run_variable(
         lab_variable("K.K", max(NUMRES, na.rm = TRUE)), cohort,
-        sources = list(biology = dplyr::select(biology, -BIOL_ID)))
+        sources = list(biology = biology))
     character_run <- run_variable(
         lab_variable(
             "K.K", paste(STRRES[!is.na(STRRES)], collapse = "|")), cohort,
@@ -111,7 +110,6 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
         c("call_status", "response_status", "transport_attempts"))
 
     # Reading NUMRES does not erase sibling payload or rows with missing NUMRES.
-    # The native BIOL_ID is optional for execution and preserved when supplied.
     expect_identical(
         numeric_run$evidence |>
             dplyr::arrange(evidence_ref) |>
@@ -120,7 +118,7 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
             source_EVTID = c("E1", "E1", "E2"),
             NUMRES = c(4.2, NA, 5.1),
             STRRES = c(NA, "negatif", "legacy-code")))
-    expect_identical(character_run$evidence$BIOL_ID, paste0("B", 1:3))
+    expect_identical(character_run$evidence$ELTID, paste0("L", 1:3))
     expect_identical(unique(numeric_run$evidence$evidence_kind), "source_row")
     expect_identical(
         intersect(c("evidence_ref", "source_row_id", "hit_ref"),
@@ -166,7 +164,6 @@ test_that("relational keys control qualification, evidence, and broadcast", {
         PATID = "P1",
         EVTID = c("E1", "E1", "E1", "E2", "E2", "E2"),
         ELTID = paste0("L", 1:6),
-        BIOL_ID = paste0("B", 1:6),
         DATEXAM = as.Date("2026-02-01") + c(0, 1, 1, 2, 3, 5),
         TYPEANA = c("HB.HB", "HB.HB", "OTHER", "HB.HB", "HB.HB", "HB.HB"),
         NUMRES = c(9, 10, 99, 14, 16, 7),
@@ -486,7 +483,7 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
 
     seen <- new.env(parent = emptyenv())
     seen$types <- list()
-    seen$evidence_ids <- "S001"
+    seen$snippet_ids <- "S001"
     seen$calls <- 0L
     testthat::local_mocked_bindings(
         .chat_metadata = function(chat) list(
@@ -500,7 +497,7 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
             result <- list(
                 statut_tabagique = "fumeur",
                 temporalite = "actuel",
-                evidence_ids = seen$evidence_ids)
+                snippet_ids = seen$snippet_ids)
             if ("rationale" %in% fields) {
                 result$rationale <- "Le texte documente un tabagisme actif."
             }
@@ -529,7 +526,7 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
                 "Le texte documente un tabagisme actif.", NA_character_),
             channel_coverage = c("complete", "partial")))
     expect_identical(seen$calls, 1L)
-    expect_false("evidence_ids" %in% names(run$values))
+    expect_false("snippet_ids" %in% names(run$values))
 
     # Selection describes the Lucene boundary; processing describes the LLM
     # boundary. No candidate therefore means no_match + not_called, whereas a
@@ -578,13 +575,13 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
     default_properties <- S7::props(seen$types[[1]])$properties
     expect_setequal(
         names(default_properties),
-        c("statut_tabagique", "temporalite", "rationale", "evidence_ids"))
-    evidence_enum <- S7::props(default_properties$evidence_ids)$items
+        c("statut_tabagique", "temporalite", "rationale", "snippet_ids"))
+    evidence_enum <- S7::props(default_properties$snippet_ids)$items
     expect_identical(S7::props(evidence_enum)$values, "S001")
 
     # Ratified citation policy: mixed citations keep the grounded value and only
     # materialize the supplied ID.
-    seen$evidence_ids <- c("S001", "S999")
+    seen$snippet_ids <- c("S001", "S999")
     mixed_citations <- run_variable(
         make_variable(), cohort,
         sources = list(documents = documents),
@@ -598,7 +595,7 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
 
     # Invented-only citations cannot publish a value or evidence and remain
     # explicitly reviewable rather than becoming a model transport error.
-    seen$evidence_ids <- "S999"
+    seen$snippet_ids <- "S999"
     invented_only <- run_variable(
         make_variable(), cohort,
         sources = list(documents = documents),
@@ -617,7 +614,7 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
             evidence_rows = 0L))
 
     # Empty citations exercise the distinct zero-ID path: invalid, not errored.
-    seen$evidence_ids <- character()
+    seen$snippet_ids <- character()
     uncited <- run_variable(
         make_variable(), cohort,
         sources = list(documents = documents),
@@ -646,14 +643,14 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
             hit_text = "Sevrage tabagique",
             snippet_text = "Sevrage tabagique documenté."))
     crowded_documents$candidates$hit_text <- NULL
-    seen$evidence_ids <- "S001"
+    seen$snippet_ids <- "S001"
     invisible(run_variable(
         make_variable(max_candidates = 2L), cohort,
         sources = list(documents = crowded_documents),
         chat = structure(list(), class = "fake")))
     prompt_type <- seen$types[[length(seen$types)]]
     prompt_evidence_enum <-
-        S7::props(S7::props(prompt_type)$properties$evidence_ids)$items
+        S7::props(S7::props(prompt_type)$properties$snippet_ids)$items
     expect_identical(
         S7::props(prompt_evidence_enum)$values,
         c("S001", "S003"))

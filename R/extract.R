@@ -175,8 +175,8 @@ format_task_target <- function(task_row, group_by) {
 
 # Shared citation resolution. Only IDs actually supplied to the model may
 # materialize as evidence; unexpected IDs remain visible as an execution warning.
-resolve_cited_ids <- function(evidence_ids, snippet_ids) {
-    returned <- unique(as.character(unlist(evidence_ids)))
+resolve_cited_snippet_ids <- function(returned_snippet_ids, snippet_ids) {
+    returned <- unique(as.character(unlist(returned_snippet_ids)))
     returned <- returned[!is.na(returned) & nzchar(returned)]
     invented <- setdiff(returned, snippet_ids)
     list(
@@ -250,7 +250,7 @@ DEFAULT_LLM_SYSTEM_PROMPT <- paste(
                 fields$rationale <- ellmer::type_string(
                     description = rationale_description)
             }
-            fields$evidence_ids <- ellmer::type_array(
+            fields$snippet_ids <- ellmer::type_array(
                 ellmer::type_enum(
                     snippet_ids,
                     description = "Identifiant d'un extrait fourni."),
@@ -296,15 +296,15 @@ DEFAULT_LLM_SYSTEM_PROMPT <- paste(
                 }
                 values$rationale <- as.character(result$rationale[[1]])
             }
-            if (!"evidence_ids" %in% names(result) ||
-                is.null(result$evidence_ids)) {
-                stop("Structured response is missing required field 'evidence_ids'.",
+            if (!"snippet_ids" %in% names(result) ||
+                is.null(result$snippet_ids)) {
+                stop("Structured response is missing required field 'snippet_ids'.",
                      call. = FALSE)
             }
-            citations <- resolve_cited_ids(result$evidence_ids, snippet_ids)
+            citations <- resolve_cited_snippet_ids(result$snippet_ids, snippet_ids)
             list(
                 values = values,
-                evidence_ids = citations$real_ids,
+                snippet_ids = citations$real_ids,
                 citation_warning = citations$citation_warning,
                 citation_warning_reason = citations$citation_warning_reason)
         })
@@ -503,12 +503,12 @@ APPROVED_MODELS <- c("gemma3:4b")
 
 # Materialize response-level evidence once; asserts every cited ID resolves to
 # exactly one snippet (caught per-task, so a failure never aborts the batch).
-.materialize_task_evidence <- function(evidence_ids, task_snippets) {
-    evidence_ids <- unique(as.character(evidence_ids))
-    if (!length(evidence_ids)) return(tibble::tibble())
+.materialize_task_evidence <- function(snippet_ids, task_snippets) {
+    snippet_ids <- unique(as.character(snippet_ids))
+    if (!length(snippet_ids)) return(tibble::tibble())
     links <- tibble::tibble(
         field = "__response__",
-        snippet_id = evidence_ids)
+        snippet_id = snippet_ids)
     ev <- links %>% left_join(task_snippets, by = "snippet_id")
     if (nrow(ev) != nrow(links) || anyNA(ev$hit_ref)) {
         stop("evidence ID does not resolve to exactly one snippet", call. = FALSE)
@@ -555,7 +555,7 @@ run_extraction <- function(coverage, candidates, definition, chat,
                     stop("The LLM parser must return exactly one wide value row.",
                          call. = FALSE)
                 }
-                grounded <- length(parsed$evidence_ids) > 0L
+                grounded <- length(parsed$snippet_ids) > 0L
                 task_validity <- if (grounded) "valid" else "invalid"
                 task_validity_reason <- if (grounded) {
                     NA_character_
@@ -571,7 +571,7 @@ run_extraction <- function(coverage, candidates, definition, chat,
                 values$citation_warning <- isTRUE(parsed$citation_warning)
                 values$citation_warning_reason <-
                     as.character(parsed$citation_warning_reason)
-                ev <- .materialize_task_evidence(parsed$evidence_ids, ts)
+                ev <- .materialize_task_evidence(parsed$snippet_ids, ts)
                 if (nrow(ev)) ev$task_id <- tid
                 list(values = values, evidence = ev,
                      task_validity = task_validity)

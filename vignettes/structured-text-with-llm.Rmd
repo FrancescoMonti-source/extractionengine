@@ -190,18 +190,18 @@ The three instruction layers have separate jobs:
 There is no `prompt =` argument and no manually authored JSON format. The engine
 calls `chat_structured()` with the TypeObject.
 
-Do not add `rationale` or `evidence_ids` to the authored TypeObject. They are
+Do not add `rationale` or `snippet_ids` to the authored TypeObject. They are
 engine-owned fields:
 
 - omitting `rationale` in `use_channel()` adds one required rationale to the same
   structured response; a string overrides its description, while `FALSE` or
   `NULL` removes it;
-- `evidence_ids` is injected at runtime as an enum containing only the snippet
+- `snippet_ids` is injected at runtime as an enum containing only the snippet
   identifiers actually shown to the model.
 
 The model therefore returns the authored fields, rationale, and citations in one
 structured call. The engine resolves those citations into the public evidence
-table and does not publish `evidence_ids` as a value column.
+table and does not publish `snippet_ids` as a value column.
 
 ## 4. Declare the LLM activation and output record
 
@@ -351,7 +351,7 @@ query, scope, model, schema, prompt configuration, and output grain.
 
 ## 7. Grounding is part of the publication contract
 
-At runtime the schema's `evidence_ids` enum is built from the snippets visible in
+At runtime the schema's `snippet_ids` enum is built from the snippets visible in
 that task's prompt. A response is publishable only when at least one returned ID
 resolves to one of those supplied snippets. A response with no real citation is
 marked invalid, its structured fields are not accepted into the study variable,
