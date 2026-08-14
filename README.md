@@ -322,7 +322,7 @@ the user prompt from the target and numbered excerpts; `user_prompt =` is an
 optional prefix for cross-field instructions. Variable-specific meaning belongs
 in the TypeObject and individual `type_*()` descriptions.
 
-Before `chat_structured()`, the engine adds `rationale` and an `evidence_ids` enum
+Before `chat_structured()`, the engine adds `rationale` and a `snippet_ids` enum
 limited to the snippets actually shown. Those names, grain keys, and audit fields
 are reserved and cannot collide with authored fields. Evidence identifiers are
 resolved to the evidence table rather than published as JSON columns. No manual

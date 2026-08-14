@@ -45,9 +45,8 @@ lane. `lab_channel()` defaults to the logical source `"biology"` but accepts any
 registered source override; source-specific prepared columns come from the
 source contract, never from `if (source == ...)` branches.
 
-The built-in biology source uses `ELTID` as its required generic source-item
-coordinate. Native `BIOL_ID` is preserved with canonical casing when available,
-but is not required for execution.
+The built-in biology source uses the canonical `ELTID` exposed by `redsan` as
+its source-item coordinate.
 
 `text_channel()` records source and selector only. Relational eligibility belongs
 to its activation.
@@ -183,7 +182,7 @@ schema descriptions.
 `rationale` is one activation argument. Omission or `TRUE` adds a required field
 with the package's generic evidence-bound description; a non-empty string
 overrides that description; `FALSE` or `NULL` omits the field. The engine also
-adds `evidence_ids`, constrained to the snippets actually shown, then resolves
+adds `snippet_ids`, constrained to the snippets actually shown, then resolves
 those identifiers into the evidence table rather than publishing them as a JSON
 field. Authored collisions with engine, grain, or audit fields fail at compile
 time. A completed response is valid only if at least one ID resolves. Mixed real

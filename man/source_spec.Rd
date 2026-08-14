@@ -42,7 +42,6 @@ Source mechanics are read from the live \pkg{redsan} registry. These functions
 bind already typed view columns to engine roles and fail closed on incompatible
 inputs; they do not parse warehouse values.
 
-The built-in biology contract requires the generic source-item coordinate
-\code{ELTID}. Native \code{BIOL_ID} is retained with canonical casing when
-available but is optional for execution.
+The built-in biology contract uses the canonical source-item coordinate
+\code{ELTID} exposed by \code{redsan}.
 }

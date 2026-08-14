@@ -256,8 +256,7 @@ BIOL_SOURCE <- source_spec(
     roles = list(
         source_row_id = "source_row_id", subject_id = "PATID",
         event_id = "EVTID", source_item_id = "ELTID",
-        source_result_id = "BIOL_ID", point_date = "DATEXAM",
-        analyte = "TYPEANA"),
+        point_date = "DATEXAM", analyte = "TYPEANA"),
     required_columns = c(
         "source_row_id", "PATID", "EVTID", "ELTID", "DATEXAM", "TYPEANA"))
 

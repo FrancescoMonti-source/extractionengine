@@ -47,10 +47,9 @@ The cohort is the set of units the study asks the engine to evaluate. Here it
 contains four stays belonging to two patients. The biology table is a prepared
 source: in a real study, `redsan` owns that preparation step.
 
-`ELTID` is the required generic element coordinate. Biology may also carry its
-native `BIOL_ID`; the engine preserves it when present but does not require it.
-Both identifiers are local to the biology source: an `ELTID` must never be joined
-to an `ELTID` from a different source.
+`ELTID` is the element coordinate normalized by `redsan`. It remains local to
+its source: an `ELTID` must never be joined to an `ELTID` from a different
+source.
 
 ```{r synthetic-data}
 cohort <- tribble(

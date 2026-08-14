@@ -720,7 +720,6 @@ measure_analyte_values <- function(source_table, tasks, analytes,
                                    grain_keys = "PATID",
                                    from_days = -7L, to_days = 7L,
                                    group_by = NULL, filter_groups = NULL,
-                                   result_id_col = "BIOL_ID",
                                    date_col = "DATEXAM",
                                    analyte_col = "TYPEANA",
                                    field = "analyte", source = "biology") {
@@ -739,7 +738,7 @@ measure_analyte_values <- function(source_table, tasks, analytes,
     # The native exam identifier is optional provenance. `source_row_id` is the
     # execution coordinate for each prepared result row.
     id_columns <- intersect(
-        unique(c("source_row_id", "PATID", "EVTID", "ELTID", result_id_col)),
+        c("source_row_id", "PATID", "EVTID", "ELTID"),
         names(biol))
     for (column in id_columns) {
         biol[[column]] <- as.character(biol[[column]])
