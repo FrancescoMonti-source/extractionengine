@@ -1745,7 +1745,10 @@ print.ee_execution_manifest <- function(x, ...) {
 # universe from it. An explicit frame remains the override (a narrowed
 # sub-cohort, e.g. an inclusion variable's 1-rows; a researcher-supplied stay
 # roster). task_id is always derived from the declared output grain keys.
-.resolve_cohort <- function(variable, cohort, sources) {
+# The declared row universe as an ordinary frame, before any variable projects it
+# to its own output grain. Shared by .resolve_cohort() and run_protocol(), which
+# needs the subject list to prepare the sources once for the whole protocol.
+.cohort_frame <- function(cohort, sources) {
     if (is.null(cohort)) cohort <- sources$cohort
     if (is.null(cohort)) {
         stop("No cohort: lay the validated cohort down with the data ",
@@ -1762,6 +1765,11 @@ print.ee_execution_manifest <- function(x, ...) {
         stop("cohort must be a non-empty data frame (one row per output unit) ",
              "or a character vector of PATIDs.", call. = FALSE)
     }
+    cohort
+}
+
+.resolve_cohort <- function(variable, cohort, sources) {
+    cohort <- .cohort_frame(cohort, sources)
     # A cohort may be laid down at stay grain (PATID + EVTID) and reused by
     # variables with different output grains. The variable owns that choice:
     # project to its declared grain before deriving the public row identifier.
@@ -2014,6 +2022,15 @@ run_protocol <- function(variables, cohort = NULL, sources = NULL,
                  "; got: ", paste(supplied_names, collapse = ", "), ".",
                  call. = FALSE)
         }
+    }
+
+    # Every variable of a protocol answers about the same declared subject list,
+    # so source normalization is a protocol-level cost, not a per-variable one.
+    # Prepare once here; .prepare_execution_sources() then passes the marked
+    # bundle straight through inside each run_variable().
+    if (!is.null(sources)) {
+        sources <- .prepare_execution_sources(
+            sources, .cohort_frame(cohort, sources))
     }
 
     results <- lapply(variables, run_variable, cohort = cohort, sources = sources,
