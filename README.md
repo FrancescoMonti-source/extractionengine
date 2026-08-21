@@ -141,11 +141,13 @@ The relational declarations answer different questions:
   stays;
 - `group_by = "PATID"` publishes one final row per patient.
 
-`ELTID` is source-local. A combine at `by = "ELTID"` may relate different
-activations or selectors only when they resolve to the same registered source
-identity domain; it cannot join elements from different sources. A payload may
-consume those keys at `ELTID` only from that same source; projection to `EVTID`
-or `PATID` is the cross-source route.
+`ELTID` values never repeat across sources, so a combine at `by = "ELTID"` that
+spans two of them would compare disjoint key spaces and qualify nothing. That is
+an authoring mistake rather than a real empty result, so it fails at build time.
+A combine at `by = "ELTID"` may still relate different activations or selectors
+resolving to the same registered source, and a payload may consume those keys at
+`ELTID` only from that same source; projection to `EVTID` or `PATID` is the
+cross-source route.
 
 `filter_by_qualified` is admitted, and required, only when `combine$by` is finer
 than `output$group_by`; it may then be only the combine key or the output key.
