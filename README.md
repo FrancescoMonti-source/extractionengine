@@ -157,6 +157,15 @@ may still relate different activations or selectors resolving to the same
 registered source, and a payload may consume those keys at `ELTID` only from
 that same source.
 
+For a combine finer than the final output, negation is evaluated over an
+explicit roster, not over the union of positive hits. The roster is built once
+from every registered source supplied to the run, restricted to the declared
+cohort, and then intersected with each referenced activation's `search_within`
+and window. At `ELTID` it is additionally restricted to the shared source of the
+referenced activations. Equal-grain decisions and coarse-to-fine broadcasts use
+the declared output tasks directly. A pre-retrieved text result does not
+enumerate a source and therefore cannot support a fine-grain complement.
+
 `filter_by_qualified` is admitted, and required, only when `combine$by` is finer
 than `output$group_by`; it may then be only the combine key or the output key.
 It must be `NULL` when there is no combine, the grains are equal, or a coarser
@@ -442,7 +451,9 @@ diagnostics, and the raw or partial response, with the same columns when it has
 zero rows. A task that never reaches the model, for example because it has no
 candidate, has no call row. The
 `execution_manifest` is a resolved snapshot of what was configured and executed,
-not a chronological activity log. Combination runs additionally keep `overlap`,
+not a chronological activity log. Its `roster` table records, per supplied
+source and identity level, how many units were enumerated; a pre-retrieved text
+input is marked non-enumerable. Combination runs additionally keep `overlap`,
 a tabular Venn/UpSet-style count of observed `TRUE`/`FALSE`/`NA` channel patterns,
 and `combine_keys`, the key-level relation evaluated at `combine$by`, including
 each channel's membership and the final `qualifies` decision. `overlap` is

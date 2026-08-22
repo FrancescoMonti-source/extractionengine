@@ -633,6 +633,14 @@ Assorbe: il roster vero, il runtime quadratico, la memoria ~9×, e l'esecuzione
 pigra del payload (che richiede di limitare l'esecuzione a livello di singola
 chiave, cosa che l'interfaccia attuale degli esecutori non permette).
 
+**Stato — prima fetta completata (2026-08-22):** il roster source-qualified viene
+costruito una volta dai frame preparati della run e alimenta già l'universo dei
+combine più fini dell'output. La restrizione riusa `search_within`, applica la
+finestra del canale e restringe `ELTID` alla sorgente comune; i conteggi per
+sorgente e livello sono nel manifest. Restano da fare la tabella lunga unica, la
+consolidazione degli esecutori e l'esecuzione pigra del payload: **la Fase 4 non è
+chiusa**.
+
 **Quattro cose da fare bene:**
 
 **1. L'universo si calcola in due modi diversi a seconda del livello.**

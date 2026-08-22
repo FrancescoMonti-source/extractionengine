@@ -72,6 +72,10 @@ typed missing value created from \code{ptype}. Otherwise it must return one
 atomic scalar or one list cell castable to \code{ptype}; longer or dimensional
 results are cardinality errors. Hit-set expressions operate on observed
 membership and do not encode clinical ontology.
+When \code{combine$by} is finer than the output grain, the complement universe is
+the source roster restricted by every referenced activation's
+\code{search_within} and window, not the union of positive hits. At
+\code{ELTID}, that roster is additionally restricted to the common source.
 \code{combine_channels(expr, by)} accepts exactly one boolean expression string; no
 separate public hit-set helper constructors are required.
 

@@ -2264,3 +2264,39 @@ warning was the existing `corpustools` whitespace-trimming notice; no patient
 identifier or clinical text was printed. The real LLM path was not executed.
 `demo extractionengine - recovered.R` remains untouched as an older recovery
 artifact.
+
+## Phase 4.1 scoped source roster (2026-08-22)
+
+**Boundary.** This is the first Phase 4 slice, not the relational-core rewrite.
+It changes only the universe used when `combine$by` is finer than the final
+output grain. Equal-grain decisions and coarse-to-fine broadcasts still use the
+declared task relation.
+
+**Change.** A source-qualified roster is built once from the prepared sources of
+the run and reused by every protocol variable. Every referenced activation
+restricts it through the existing `search_within` resolver and its authored
+window; those scoped unit sets are intersected before the boolean expression is
+evaluated. At `ELTID`, only the common source domain participates. Pre-retrieved
+text inputs are marked non-enumerable and fail for a fine-grain combine rather
+than supplying an incomplete complement. The execution manifest records unit
+counts by source and `PATID`/`EVTID`/`ELTID` level.
+
+**Sentinel.** A synthetic biology case proves that `!a & !b` can qualify an
+existing stay hit by neither selector, while the same old stay is excluded by a
+window. A Lucene case proves that biology elements do not enter the complement
+of two document channels.
+
+**Still open.** The six executor frames, the unified long relation, LLM prompt
+artifacts, and lazy payload execution remain Phase 4 work.
+
+**Verification.** All 59 current-contract expectations pass. The four Phase 0
+differential cases remain identical to `after-phase3b-final.rds`. A full source
+build creates both vignettes, and `R CMD check --no-manual
+--no-build-vignettes` finishes with `Status: OK`, including tests,
+documentation, and execution of both vignette sources. No real model call was
+made.
+
+**Files changed.** `R/data.R`, `R/run_variable.R`,
+`tests/testthat/test-current-contracts.R`, `README.md`, `DESIGN.md`, `PLAN.md`,
+`man/operators.Rd`, `man/run_variable.Rd`, `man/variable_spec.Rd`, and this
+entry.

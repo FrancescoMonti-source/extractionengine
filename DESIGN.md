@@ -141,6 +141,14 @@ same source.
 Both `by` and `group_by` are mandatory; neither is inferred from the other. A
 combine may be finer than the output (existential projection), equal to it
 (direct match), or coarser (explicit broadcast to output units).
+At equal or coarser grain, the evaluated universe is the declared output-task
+relation. At finer grain, it is an explicit roster built once from all registered
+sources supplied to the run, not the union of positive channel hits. Each
+referenced activation restricts that roster with the same `search_within` and
+window used by execution, and the final universe is the intersection of those
+scopes. `ELTID` is additionally restricted to the common source domain. A
+pre-retrieved text result cannot provide this source roster, so a fine-grain
+combine over such an input fails instead of inventing a complement.
 `filter_by_qualified` is admitted and mandatory only for the fine-to-coarse
 case. It may then equal `combine$by`, retaining rows of qualifying subunits, or
 `output$group_by`, retaining all payload rows of final units with at least one
@@ -267,7 +275,9 @@ The execution manifest and `inspect()` record activation alias,
 `origin_concept`, `origin_channel`, source, and inline/catalog origin,
 original and effective selector, row/group filters, activation window,
 `search_within`, `combine$by`, `filter_by_qualified`, `output$group_by`, selected
-output value expression and `ptype`, response schema, and LLM configuration.
+output value expression and `ptype`, and response schema. Its `roster` table
+records source-qualified unit counts at `PATID`, `EVTID`, and `ELTID`, including
+whether each supplied source was enumerable.
 Their output view follows the execution order `combine by -> filter by qualified
 -> group by -> evaluate value`.
 

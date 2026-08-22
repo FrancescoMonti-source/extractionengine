@@ -120,8 +120,8 @@ programmatic selection and \code{.env} disambiguates external values.
 For \code{lucene_llm}, authored instructions live in the TypeObject and its
 field descriptions. The engine dynamically adds the optional rationale and an
 evidence-ID enum limited to supplied snippets, then delegates structured output
-to \code{ellmer::chat_structured()}. Model and transport parameters belong to
-the individual activation, so one variable may activate more than one model. An
+to \code{ellmer::chat_structured()}. Provider, model, and transport parameters
+belong to the caller-supplied Chat at execution, not to the variable. An
 explicit response-to-hit rule is not yet implemented, so LLM activations are
 rejected when referenced by \code{combine = combine_channels(...)}; use
 \code{method = "lucene"} when retrieval-hit presence is the intended signal.

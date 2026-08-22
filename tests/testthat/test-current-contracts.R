@@ -481,6 +481,94 @@ test_that("relational keys control qualification, evidence, and broadcast", {
         "only rows from the matched event set")
 })
 
+test_that("fine-grain negation uses the scoped source roster", {
+    biology <- tibble::tibble(
+        PATID = "P1",
+        EVTID = c("E1", "E2", "E3"),
+        ELTID = c("L1", "L2", "L3"),
+        DATEXAM = as.Date(c("2026-02-01", "2026-02-01", "2020-01-01")),
+        TYPEANA = c("A", "B", "OTHER"),
+        NUMRES = c(1, 1, 1),
+        STRRES = NA_character_)
+    marker_a <- concept_spec(
+        "marker_a", channels = list(a = lab_channel(selector = analyte("A"))))
+    marker_b <- concept_spec(
+        "marker_b", channels = list(b = lab_channel(selector = analyte("B"))))
+    make_lab_variable <- function(name, window = NULL) variable_spec(
+        name = name,
+        anchor = "anchor_date",
+        channels = list(
+            a = use_channel(
+                "a", concept = marker_a, search_within = "PATID",
+                window = window),
+            b = use_channel(
+                "b", concept = marker_b, search_within = "PATID",
+                window = window)),
+        combine = combine_channels("!a & !b", by = "EVTID"),
+        output = bin_output(group_by = "PATID"))
+
+    lab_runs <- run_protocol(
+        list(
+            make_lab_variable("unwindowed_roster_complement"),
+            make_lab_variable("windowed_roster_complement", c(-1, 1))),
+        cohort = tibble::tibble(
+            PATID = "P1", anchor_date = as.Date("2026-02-01")),
+        sources = list(biology = biology))
+
+    # E3 exists and neither selector hits it, so it qualifies only without the
+    # window that excludes its old source row.
+    expect_identical(
+        vapply(lab_runs, function(run) run$values$value, integer(1)),
+        c(unwindowed_roster_complement = 1L,
+          windowed_roster_complement = 0L))
+    expect_identical(
+        lab_runs$unwindowed_roster_complement$audit$combine_keys$EVTID[
+            lab_runs$unwindowed_roster_complement$audit$combine_keys$qualifies],
+        "E3")
+    expect_identical(
+        lab_runs$unwindowed_roster_complement$audit$execution_manifest$roster |>
+            dplyr::filter(source == "biology") |>
+            dplyr::select(level, n_units, enumerated),
+        tibble::tibble(
+            level = c("PATID", "EVTID", "ELTID"),
+            n_units = c(1L, 3L, 3L),
+            enumerated = TRUE))
+
+    documents <- data.frame(
+        ELTID = c("D1", "D2"),
+        RECTXT = c("Alpha marker.", "Beta marker."),
+        PATID = "P1", EVTID = c("E1", "E2"),
+        RECDATE = as.Date(c("2026-02-01", "2026-02-01")),
+        RECTYPE = "CR")
+    corpus <- corpustools::create_tcorpus(
+        documents, text_columns = "RECTXT", doc_column = "ELTID",
+        split_sentences = TRUE, remember_spaces = FALSE, verbose = FALSE)
+    alpha <- concept_spec(
+        "alpha", channels = list(text = text_channel(lucene_query("alpha"))))
+    beta <- concept_spec(
+        "beta", channels = list(text = text_channel(lucene_query("beta"))))
+    document_complement <- variable_spec(
+        name = "document_complement",
+        channels = list(
+            alpha = use_channel(
+                "text", concept = alpha, search_within = "PATID",
+                method = "lucene"),
+            beta = use_channel(
+                "text", concept = beta, search_within = "PATID",
+                method = "lucene")),
+        combine = combine_channels("!alpha & !beta", by = "ELTID"),
+        output = bin_output(group_by = "PATID"))
+    document_run <- run_variable(
+        document_complement, cohort = tibble::tibble(PATID = "P1"),
+        sources = list(documents = corpus, biology = biology))
+
+    # Biology contributes to the shared EVTID roster, but its ELTIDs cannot enter
+    # the complement of two document channels.
+    expect_identical(document_run$values$value, 0L)
+    expect_identical(
+        sort(document_run$audit$combine_keys$ELTID), c("D1", "D2"))
+})
+
 test_that("LLM boundary stays grounded, isolated, and fail closed", {
     new_engine_fields <- c(
         "selection_status", "evidence_kind", "call_status",

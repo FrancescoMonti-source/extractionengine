@@ -295,6 +295,138 @@ EE_SOURCES <- list(
 EE_SOURCE_PREPARERS <- list(
     biology = .prepare_biology_view)
 
+# A run-level roster enumerates source units before selectors execute. It keeps
+# source membership because ELTID is only comparable inside one source; PATID and
+# EVTID remain shared domains across every source supplied to the run.
+.empty_execution_roster_rows <- function() {
+    tibble::tibble(
+        source = character(), PATID = character(), EVTID = character(),
+        ELTID = character(), time_start = as.Date(character()),
+        time_end = as.Date(character()))
+}
+
+.source_roster_rows <- function(source, data, cohort_patids) {
+    # Pre-retrieved text is a query result, not an enumerable source snapshot.
+    if (identical(source, "documents") && is.list(data) &&
+        all(c("coverage", "candidates") %in% names(data))) {
+        return(NULL)
+    }
+
+    frame <- if (identical(source, "documents")) {
+        .document_index(data)
+    } else if (is.data.frame(data)) {
+        data
+    } else {
+        return(NULL)
+    }
+    spec <- EE_SOURCES[[source]]
+    validate_source_view(frame, spec)
+
+    identity_columns <- c("PATID", "EVTID", "ELTID")
+    missing <- setdiff(identity_columns, names(frame))
+    if (length(missing)) {
+        stop("Source '", source, "' cannot build its roster; missing column(s): ",
+             paste(missing, collapse = ", "), ".", call. = FALSE)
+    }
+    invalid <- vapply(identity_columns, function(column) {
+        value <- frame[[column]]
+        anyNA(value) || any(!nzchar(as.character(value)))
+    }, logical(1))
+    if (any(invalid)) {
+        stop("Source '", source, "' cannot build its roster; identity column(s) ",
+             "contain missing values: ",
+             paste(identity_columns[invalid], collapse = ", "), ".",
+             call. = FALSE)
+    }
+
+    roles <- source_roles(spec)
+    start_column <- roles$point_date %||% roles$event_start
+    end_column <- roles$point_date %||% roles$event_end %||% start_column
+    if (is.null(start_column) ||
+        !all(c(start_column, end_column) %in% names(frame))) {
+        stop("Source '", source,
+             "' cannot build its roster without its declared source time.",
+             call. = FALSE)
+    }
+
+    rows <- tibble::tibble(
+        source = source,
+        PATID = as.character(frame$PATID),
+        EVTID = as.character(frame$EVTID),
+        ELTID = as.character(frame$ELTID),
+        time_start = .clinical_date(frame[[start_column]]),
+        time_end = .clinical_date(frame[[end_column]]))
+    if (length(cohort_patids)) {
+        rows <- rows[rows$PATID %in% cohort_patids, , drop = FALSE]
+    }
+    dplyr::distinct(rows)
+}
+
+.build_execution_roster <- function(sources, cohort) {
+    if (is.null(sources)) {
+        return(structure(
+            list(rows = .empty_execution_roster_rows(),
+                 availability = tibble::tibble(
+                     source = character(), enumerated = logical())),
+            class = c("ee_execution_roster", "list")))
+    }
+    source_names <- intersect(names(sources), names(EE_SOURCES))
+    cohort_patids <- unique(as.character(cohort$PATID))
+    cohort_patids <- cohort_patids[
+        !is.na(cohort_patids) & nzchar(cohort_patids)]
+    rows <- lapply(source_names, function(source) {
+        .source_roster_rows(source, sources[[source]], cohort_patids)
+    })
+    enumerated <- !vapply(rows, is.null, logical(1))
+    structure(
+        list(
+            rows = if (any(enumerated)) {
+                dplyr::bind_rows(rows[enumerated])
+            } else {
+                .empty_execution_roster_rows()
+            },
+            availability = tibble::tibble(
+                source = source_names, enumerated = enumerated)),
+        class = c("ee_execution_roster", "list"))
+}
+
+.attach_execution_roster <- function(sources, cohort) {
+    if (is.null(sources) || inherits(attr(sources, "ee_roster"),
+                                     "ee_execution_roster")) {
+        return(sources)
+    }
+    attr(sources, "ee_roster") <- .build_execution_roster(sources, cohort)
+    sources
+}
+
+.execution_roster_manifest <- function(roster) {
+    if (!inherits(roster, "ee_execution_roster")) {
+        return(tibble::tibble(
+            source = character(), level = character(), n_units = integer(),
+            enumerated = logical()))
+    }
+    level_keys <- list(
+        PATID = "PATID",
+        EVTID = c("PATID", "EVTID"),
+        ELTID = c("PATID", "EVTID", "ELTID"))
+    dplyr::bind_rows(lapply(seq_len(nrow(roster$availability)), function(i) {
+        source <- roster$availability$source[[i]]
+        enumerated <- roster$availability$enumerated[[i]]
+        source_rows <- roster$rows[roster$rows$source == source, , drop = FALSE]
+        tibble::tibble(
+            source = source,
+            level = names(level_keys),
+            n_units = if (enumerated) {
+                unname(vapply(level_keys, function(keys) {
+                    nrow(dplyr::distinct(source_rows[keys]))
+                }, integer(1)))
+            } else {
+                rep(NA_integer_, length(level_keys))
+            },
+            enumerated = enumerated)
+    }))
+}
+
 edsan_source_specs <- function() {
     EE_SOURCES
 }

@@ -77,7 +77,9 @@ separates \code{call_status}, \code{response_status}, \code{task_validity}, and
 diagnostics, and raw or partial response, with a stable schema even at zero rows.
 A task that does not reach the model has no call row.
 \code{execution_manifest} is the
-resolved configuration snapshot, not a chronological log. It records the
+resolved configuration snapshot, not a chronological log. Its \code{roster}
+table records source-qualified \code{PATID}, \code{EVTID}, and \code{ELTID} unit
+counts and whether each supplied source was enumerable. It records the
 terminal data flow as combine by, filter by qualified, group by, then evaluate
 value.
 Combine runs

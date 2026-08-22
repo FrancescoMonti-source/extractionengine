@@ -1222,7 +1222,8 @@
 # OBSERVED hit-set algebra, not Kleene truth logic: each channel contributes its
 # OBSERVED hit set (a task is a member iff hit == TRUE; both FALSE and NA mean "no
 # observed hit", hence non-member). `!A` is the complement of A's observed hit set
-# within the task universe. So `A & !B` with B unavailable keeps an A-hit task
+# within the evaluated universe: output tasks at equal/coarser grain, or the
+# scoped source roster at finer grain. So `A & !B` with B unavailable keeps an A-hit task
 # INCLUDED (B produced no observed hit). NA is preserved only in the membership
 # overlap audit, not propagated into value. (A strict epistemic mode that propagates
 # NA into value is a deliberate future extension, not the default.) The public
@@ -1264,7 +1265,68 @@
                                    key = keys))
 }
 
-.hit_set_expr_variable <- function(variable, tasks, channel_results) {
+.roster_units_for_channel <- function(roster, tasks, channel, level) {
+    if (!inherits(roster, "ee_execution_roster")) {
+        stop("Fine-grain combine requires a run-level source roster.",
+             call. = FALSE)
+    }
+    required_sources <- if (identical(level, "ELTID")) {
+        channel$source
+    } else {
+        roster$availability$source
+    }
+    unavailable <- roster$availability$source[
+        roster$availability$source %in% required_sources &
+            !roster$availability$enumerated]
+    if (length(unavailable)) {
+        stop("Fine-grain combine cannot enumerate source snapshot(s): ",
+             paste(unavailable, collapse = ", "),
+             ". Pre-retrieved text inputs are query results, not rosters.",
+             call. = FALSE)
+    }
+
+    rows <- roster$rows
+    if (identical(level, "ELTID")) {
+        rows <- rows[rows$source == channel$source, , drop = FALSE]
+    }
+    scope_keys <- .channel_scope_keys(channel, tasks)
+    task_columns <- unique(c(
+        "task_id", scope_keys,
+        if (inherits(channel$window, "ee_window")) "anchor_date"))
+    scoped_tasks <- dplyr::distinct(tibble::as_tibble(tasks)[task_columns])
+    roster_columns <- unique(c(scope_keys, level, "time_start", "time_end"))
+    scoped_rows <- dplyr::inner_join(
+        scoped_tasks, rows[roster_columns], by = scope_keys,
+        relationship = "many-to-many")
+    if (inherits(channel$window, "ee_window")) {
+        scoped_rows <- scoped_rows[.overlaps_interval(
+            scoped_rows$time_start, scoped_rows$time_end,
+            .clinical_date(scoped_rows$anchor_date) + channel$window$from_days,
+            .clinical_date(scoped_rows$anchor_date) + channel$window$to_days),
+            , drop = FALSE]
+    }
+    dplyr::distinct(tibble::tibble(
+        task_id = as.character(scoped_rows$task_id),
+        key = as.character(scoped_rows[[level]])))
+}
+
+.scoped_roster_universe <- function(variable, tasks, roster, channels, level) {
+    units <- lapply(channels, function(channel_name) {
+        .roster_units_for_channel(
+            roster, tasks, .channel_def(variable, channel_name), level)
+    })
+    universe <- units[[1L]]
+    if (length(units) > 1L) {
+        for (i in 2:length(units)) {
+            universe <- dplyr::inner_join(
+                universe, units[[i]], by = c("task_id", "key"),
+                relationship = "many-to-many")
+        }
+    }
+    dplyr::distinct(universe)
+}
+
+.hit_set_expr_variable <- function(variable, tasks, channel_results, roster) {
     var_name <- variable$name
     combine <- variable$combine
     declared <- names(channel_results)
@@ -1299,16 +1361,23 @@
     }
 
     if (combine_rank > output_rank) {
-        # Fine -> coarse: evaluate over the observed finer-key universe and then
-        # project with exists() to each output task. The engine has no roster of
-        # unobserved finer units, so negation is complement within observed keys.
+        # Fine -> coarse: evaluate over the source roster restricted by every
+        # referenced channel's declared search scope and window, then project
+        # with exists() to each output task.
         keysets <- stats::setNames(lapply(referenced, function(ch) {
             .channel_combine_keys(channel_results[[ch]], combine_level, ch,
                                   task_ids[vectors[[ch]] %in% TRUE])
         }), referenced)
-        universe <- dplyr::distinct(bind_rows(keysets))
+        universe <- .scoped_roster_universe(
+            variable, tasks, roster, referenced, combine_level)
         pair_of <- function(d) paste(d$task_id, d$key, sep = "\r")
         u_pairs <- pair_of(universe)
+        observed_pairs <- pair_of(dplyr::bind_rows(keysets))
+        outside <- setdiff(observed_pairs, u_pairs)
+        if (length(outside)) {
+            stop("Observed combine keys fall outside the declared roster scope.",
+                 call. = FALSE)
+        }
         observed_keys <- lapply(keysets, function(ks) u_pairs %in% pair_of(ks))
         key_result <- if (nrow(universe)) {
             .eval_hitset_expr(combine$ast, observed_keys)
@@ -1545,7 +1614,7 @@
     list(kind = "cohort_column", column = as.character(anchor))
 }
 
-.build_execution_manifest <- function(variable) {
+.build_execution_manifest <- function(variable, roster = NULL) {
     channels <- lapply(variable$channels, function(ch) {
         spec <- if (ch$source %in% names(EE_SOURCES)) EE_SOURCES[[ch$source]]
                 else NULL
@@ -1612,6 +1681,7 @@
             combine = combine,
             output = output,
             channels = channels,
+            roster = .execution_roster_manifest(roster),
             executed_at = Sys.time()),
         class = c("ee_execution_manifest", "list"))
 }
@@ -1837,6 +1907,8 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
     channel_chats <- .resolve_channel_chats(variable, chat)
     tasks <- .resolve_cohort(variable, cohort, sources)
     sources <- .prepare_execution_sources(sources, tasks)
+    sources <- .attach_execution_roster(sources, tasks)
+    roster <- attr(sources, "ee_roster")
     # Anchor first: a select_event closure may EMIT tasks (one per selected
     # event), and the grain guard must see the emitted universe, not the
     # pre-anchor one -- select_event = identity with output group_by =
@@ -1860,7 +1932,7 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
         identical(combine$kind, "hit_set_expr")) {
         # Multi-channel hit-set algebra gates tasks/keys. bin_output() publishes
         # membership; from_channel() publishes a separately named payload alias.
-        out <- .hit_set_expr_variable(variable, tasks, channel_results)
+        out <- .hit_set_expr_variable(variable, tasks, channel_results, roster)
         if (identical(variable$output$kind, "from_channel")) {
             payload_channel <- .channel_def(variable, variable$output$channel)
             out <- if (identical(payload_channel$method, "lucene_llm")) {
@@ -1913,7 +1985,7 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
     audit <- list(
         counts = published$.audit_counts,
         llm_calls = published$.audit_llm_calls,
-        execution_manifest = .build_execution_manifest(variable))
+        execution_manifest = .build_execution_manifest(variable, roster))
     if (is.data.frame(out$overlap)) audit$overlap <- out$overlap
     if (is.data.frame(out$combine_keys)) {
         audit$combine_keys <- published$.audit_combine_keys
@@ -1985,8 +2057,9 @@ run_protocol <- function(variables, cohort = NULL, sources = NULL,
     # Prepare once here; .prepare_execution_sources() then passes the marked
     # bundle straight through inside each run_variable().
     if (!is.null(sources)) {
-        sources <- .prepare_execution_sources(
-            sources, .cohort_frame(cohort, sources))
+        protocol_cohort <- .cohort_frame(cohort, sources)
+        sources <- .prepare_execution_sources(sources, protocol_cohort)
+        sources <- .attach_execution_roster(sources, protocol_cohort)
     }
 
     results <- lapply(variables, run_variable, cohort = cohort, sources = sources,
