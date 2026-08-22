@@ -141,13 +141,14 @@ The relational declarations answer different questions:
   stays;
 - `group_by = "PATID"` publishes one final row per patient.
 
-`ELTID` values never repeat across sources, so a combine at `by = "ELTID"` that
-spans two of them would compare disjoint key spaces and qualify nothing. That is
-an authoring mistake rather than a real empty result, so it fails at build time.
-A combine at `by = "ELTID"` may still relate different activations or selectors
-resolving to the same registered source, and a payload may consume those keys at
-`ELTID` only from that same source; projection to `EVTID` or `PATID` is the
-cross-source route.
+`by` names the unit where the whole expression is evaluated as one predicate.
+Two sources cannot place signals on the same element, so a cross-source combine
+at `by = "ELTID"` has no useful relational grain: conjunction and negation are
+degenerate, while disjunction adds nothing over combining after projection to
+`EVTID` or `PATID`. It therefore fails at build time. A combine at `by = "ELTID"`
+may still relate different activations or selectors resolving to the same
+registered source, and a payload may consume those keys at `ELTID` only from
+that same source.
 
 `filter_by_qualified` is admitted, and required, only when `combine$by` is finer
 than `output$group_by`; it may then be only the combine key or the output key.

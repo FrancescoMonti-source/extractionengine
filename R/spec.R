@@ -443,13 +443,10 @@ use_channel <- function(channel, concept = NULL, selector = NULL,
     invisible(TRUE)
 }
 
-# ELTID values are unique across the whole warehouse, so two prepared sources
-# never share one. That makes ELTID a sound relational key between activation
-# aliases of the SAME source, and a degenerate one across sources: the key spaces
-# are disjoint, so an intersection is empty by construction and a negation
-# complements within a space the other channel can never inhabit. Such an
-# expression cannot mean what it says, so it fails here at build time rather than
-# silently qualifying nothing. EVTID/PATID are the keys sources genuinely share.
+# combine$by names the unit where the expression is evaluated as one predicate.
+# Two sources cannot place signals on the same ELTID, so cross-source conjunction
+# and negation are degenerate; disjunction adds nothing over evaluating after
+# projection to EVTID or PATID. Same-source aliases may legitimately share ELTID.
 .check_eltid_identity_domain <- function(combine, channels, output) {
     if (!inherits(combine, "ee_combiner") ||
         !identical(combine$kind, "hit_set_expr") ||
@@ -464,9 +461,8 @@ use_channel <- function(channel, concept = NULL, selector = NULL,
         detail <- paste(paste0(names(sources), "=", sources), collapse = ", ")
         stop("combine_channels(..., by = 'ELTID') requires all referenced ",
              "activations to read the same source; got ", detail,
-             ". ELTID values never repeat across sources, so this combine would ",
-             "compare disjoint key spaces and qualify nothing. Project the ",
-             "relation to EVTID or PATID before combining different sources.",
+             ". Different sources cannot place signals on the same element; ",
+             "use EVTID or PATID for a cross-source relation.",
              call. = FALSE)
     }
 

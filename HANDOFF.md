@@ -2092,3 +2092,26 @@ four cases.
 
 **Files changed.** `R/data.R` and this entry. Public results and authoring APIs
 are unchanged.
+
+## Phase 1.9 cross-source ELTID rationale (2026-08-22)
+
+**Decision.** Keep `combine_channels(..., by = "ELTID")` valid for aliases of
+one source and reject it across sources. The validation behavior is unchanged.
+
+**Correct rationale.** `by` names the unit where the complete expression is one
+predicate. Different sources cannot place signals on the same element, so an
+ELTID-grain cross-source conjunction or negation is degenerate; disjunction adds
+nothing over a relation projected to `EVTID` or `PATID`. The former claim that
+ELTID values never repeat across sources was not a valid domain guarantee.
+
+**Change.** The implementation comment, error, README, design note, handwritten
+operator help, and current-contract assertion now state and pin this rationale.
+No combine, projection, or payload logic changed.
+
+**Verification.** All 46 current-contract expectations pass, and the Phase 0
+oracle is unchanged in all four cases. A full source build, including both
+vignettes, passes; `R CMD check --no-manual --no-build-vignettes` finishes with
+`Status: OK` and executes both vignette sources successfully.
+
+**Files changed.** `R/spec.R`, `README.md`, `DESIGN.md`,
+`tests/testthat/test-current-contracts.R`, `man/operators.Rd`, and this entry.

@@ -27,9 +27,9 @@ Without it, multiple matches are an error.}
 \code{&}, \code{!}, and parentheses.}
 \item{by}{The \code{"PATID"}, \code{"EVTID"}, or \code{"ELTID"} key where
 the signals referenced by \code{expr} must coexist. \code{"ELTID"} is valid only
-when all referenced activations read the same source: ELTID values never repeat
-across sources, so a cross-source combine would compare disjoint key spaces and
-qualify nothing. A payload consuming those qualified keys at \code{ELTID} must
+when all referenced activations read the same source. Different sources cannot
+place signals on the same element; use \code{"EVTID"} or \code{"PATID"} for a
+cross-source relation. A payload consuming qualified \code{"ELTID"} keys must
 read that same source too.}
 \item{channel}{The activation alias whose payload is published.}
 \item{value}{For a deterministic activation, one data-masked expression evaluated

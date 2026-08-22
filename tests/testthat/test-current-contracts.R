@@ -359,9 +359,9 @@ test_that("relational keys control qualification, evidence, and broadcast", {
             beta = list(
                 origin_concept = "beta_signal", origin_channel = "text")))
 
-    # ELTID values never repeat across sources, so distinct selectors from the
-    # same document source may combine at document level, while a cross-source
-    # ELTID combine compares disjoint key spaces and can only qualify nothing.
+    # ELTID is one predicate domain only within a source. Distinct selectors
+    # from that source may combine at element level; cross-source relations must
+    # first project to the shared EVTID or PATID domain.
     cross_source_variable <- variable_spec(
         name = "cross_source_ELTID_is_invalid",
         channels = list(
@@ -373,7 +373,7 @@ test_that("relational keys control qualification, evidence, and broadcast", {
         output = bin_output(group_by = "PATID"))
     expect_error(
         resolve_variable_spec(cross_source_variable),
-        "never repeat across sources")
+        "cannot place signals on the same element")
 
     cross_source_payload_variable <- variable_spec(
         name = "cross_source_ELTID_payload_is_invalid",

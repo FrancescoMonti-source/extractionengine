@@ -125,17 +125,15 @@ The combine and output contracts are self-contained:
 `!`, and parentheses. No separate public hit-set helper constructors are part of
 the authoring surface.
 
-`ELTID` values are unique across the whole warehouse: two prepared sources never
-share one. A cross-source combine at `by = "ELTID"` would therefore evaluate over
-disjoint key spaces--an intersection is empty by construction, and a negation
-complements within a space the other channel can never inhabit--so the expression
-cannot mean what its text says. It is rejected at build time rather than silently
-qualifying nothing. A combine at `by = "ELTID"` may still use multiple aliases or
-selectors resolving to the same source. If a payload consumes those qualified keys
-at `ELTID`--through its final `group_by` or `filter_by_qualified`--that payload
-must belong to that same source. Projecting qualification first to `EVTID` or
-`PATID`, the keys the sources genuinely share, permits a legitimate cross-source
-use.
+`by` names the unit where the whole expression is evaluated as one predicate.
+Two sources cannot place signals on the same element, so a cross-source combine
+at `by = "ELTID"` has no useful relational grain: conjunction and negation are
+degenerate, while disjunction computes the same relation available after
+projection to `EVTID` or `PATID`. It is therefore rejected at build time. A
+combine at `by = "ELTID"` may still use multiple aliases or selectors resolving
+to the same source. If a payload consumes those qualified keys at `ELTID`--through
+its final `group_by` or `filter_by_qualified`--that payload must belong to that
+same source.
 
 Both `by` and `group_by` are mandatory; neither is inferred from the other. A
 combine may be finer than the output (existential projection), equal to it
