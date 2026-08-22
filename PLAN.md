@@ -173,9 +173,9 @@ Regole del confronto:
   insieme ordinato dei riferimenti di evidenza** realmente presenti nel contratto
   corrente.
 - Il set di fixture contiene almeno un task `from_channel()` senza righe di
-  payload. Il confronto deve verificare che la riga del task non sparisca e che
-  `n_payload_rows = 0`: l'universo viene dai task dichiarati, non dai soli gruppi
-  presenti nei dati.
+  payload. Il confronto deve verificare che la riga del task non sparisca, che il
+  valore resti mancante e che gli stati operativi pubblici restino invariati:
+  l'universo viene dai task dichiarati, non dai soli gruppi presenti nei dati.
 - `channel_coverage` non viene elevato a baseline: la Fase 3 lo elimina dai
   risultati strutturati.
 - I casi colpiti dal difetto B vengono identificati meccanicamente con il criterio

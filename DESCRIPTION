@@ -28,6 +28,7 @@ Imports:
     tidyr
 Suggests:
     knitr,
+    pkgload,
     R6,
     rmarkdown,
     testthat (>= 3.0.0)

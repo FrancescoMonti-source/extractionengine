@@ -1904,3 +1904,39 @@ The three sentinels now contain 47 expectations with no warning. Both vignettes
 rebuild from the source tarball, and `R CMD check --no-manual` finishes with
 `Status: OK`. The PDF-manual-only gate is unavailable on this machine because
 `pdflatex` is not installed.
+
+## Phase 0 synthetic differential oracle (2026-08-21)
+
+**Goal and acceptance criteria.** Establish a data-free before/after comparator
+before changing execution semantics. A missing declared envelope column must
+fail, the baseline must come from the actual base checkout, and a deliberately
+changed public value must make the comparison fail.
+
+**Change and reasoning.** `tools/differential-oracle/` now owns one snapshot
+runner, a fail-fast public-envelope normalizer, a comparator, and four small
+synthetic cases: structured laboratory output with a no-payload task, a
+same-source `ELTID` combine, fake-LLM text extraction, and a windowed document
+date. The biology fixtures preserve canonical `PATID`/`EVTID`/`ELTID`; repeated
+rows may share one biology `ELTID`, while the combine never crosses sources.
+`channel_coverage` and audit internals are deliberately outside the baseline.
+
+The no-payload acceptance criterion was corrected while implementing it:
+`n_payload_rows` is removed before public return, so the oracle pins the retained
+task row, missing value, and public selection/processing states instead of an
+internal field.
+
+**Verification.** A detached worktree at `f2ba3bb` produced the ignored baseline;
+the current working tree matches it in all four cases. The normalizer rejects a
+missing declared column, and a snapshot with one altered value makes the
+comparator exit 1. `testthat::test_local(".")` passes. `R CMD build` passes;
+`R CMD check --no-manual --no-build-vignettes` validates installation, code,
+documentation, and tests, with only the two expected missing-vignette-output
+warnings caused by deliberately skipping vignette builds.
+
+**Files changed.** `tools/differential-oracle/*`, `DESCRIPTION`, `PLAN.md`, and
+this handoff entry. The generated `.rds` snapshots remain ignored under
+`outputs/differential-oracle/`; no patient-derived artifact is a baseline.
+
+**Open.** Promotion to a permanent test or CI remains deferred until the rewrite
+shows that this exact envelope still protects a useful contract. No engine
+runtime or public API changed in Phase 0.
