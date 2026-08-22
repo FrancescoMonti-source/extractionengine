@@ -2209,3 +2209,38 @@ local Git and Desktop project roots found no external R, Rmd, or qmd consumer of
 `R/operators.R`, `R/run_variable.R`, `tests/testthat/test-current-contracts.R`,
 `tools/differential-oracle/README.md`, `README.md`, `DESIGN.md`,
 `man/extractionengine-package.Rd`, `man/run_variable.Rd`, and this entry.
+
+## Phase 3b caller-owned LLM transport (2026-08-22)
+
+**Decision.** Provider, model, and model parameters are execution dependencies,
+not variable-authoring fields. One caller-constructed Ellmer Chat serves every
+LLM activation in a `run_variable()` or `run_protocol()` call. A study needing
+different models splits its variables across calls over the same cohort and
+source snapshot; no local/default/override precedence is introduced.
+
+**Change.** `model` and `model_params` were removed from `use_channel()`, resolved
+channels, and the execution manifest. The package no longer constructs Ollama
+Chats, approves model names, or reads `ALLOW_UNGATED_MODEL`. LLM execution now
+requires an explicit `chat`; deterministic execution still needs none. Direct
+and protocol runs validate this dependency before cohort or source preparation,
+and task execution continues to deep-clone and clear the supplied Chat.
+Provider, model, and parameters actually observed remain in `audit$llm_calls`.
+
+**Verification.** All 54 current-contract expectations pass, including loud
+failure for an LLM variable without a Chat and absence of declared-model fields
+from the manifest. The four Phase 0 differential cases are unchanged against
+`after-phase3.rds`. A full source build creates both vignettes, and `R CMD check
+--no-manual --no-build-vignettes` finishes with `Status: OK`, including tests,
+documentation, and execution of both vignette sources. No real model call was
+made.
+
+**Known downstream migration.** `C:\Users\franc\Desktop\demo extractionengine.R`
+still asserts and uses `model`/`model_params`; it also retains older authoring
+surface from earlier phases, so it needs a separate end-to-end refresh rather
+than a Phase 3b-only substitution. The adjacent `- recovered.R` copy is older
+still. Both are outside this repository and were inspected but not modified.
+
+**Files changed.** `R/spec.R`, `R/extract.R`, `R/run_variable.R`,
+`tests/testthat/test-current-contracts.R`, `tools/differential-oracle/fixtures.R`,
+`README.md`, `DESIGN.md`, `PLAN.md`, `vignettes/structured-text-with-llm.Rmd`,
+`man/variable_spec.Rd`, `man/run_variable.Rd`, and this entry.

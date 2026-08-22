@@ -126,8 +126,6 @@ DifferentialFakeChat <- R6::R6Class(
             concept = marker,
             search_within = "PATID",
             method = "lucene_llm",
-            model = "synthetic-model",
-            model_params = list(temperature = 0, seed = 123L),
             response = response)),
         output = from_channel("marker", group_by = "EVTID"))
     cohort <- tibble::tibble(

@@ -310,41 +310,24 @@ DEFAULT_LLM_SYSTEM_PROMPT <- paste(
         })
 }
 
-APPROVED_MODELS <- c("gemma3:4b")
-
-# An LLM activation owns its model choice; the engine owns transport construction.
-# Kept behind a tiny seam so package tests can verify orchestration without
-# starting a real Ollama request.
-.create_ollama_chat <- function(model, params) {
-    ellmer::chat_ollama(model = model, params = params)
-}
-
 .channel_needs_chat <- function(channel) {
     identical(channel$type, "text") &&
         identical(channel$method, "lucene_llm")
 }
 
 .resolve_channel_chats <- function(variable, chat) {
-    chats <- lapply(names(variable$channels), function(alias) {
-        channel <- variable$channels[[alias]]
-        if (!.channel_needs_chat(channel)) return(NULL)
-        if (!is.null(chat)) return(chat)
-        if (is.null(channel$model)) {
-            stop("lucene_llm activation '", alias, "' in variable '",
-                 variable$name,
-                 "' must declare model = <Ollama model> in use_channel() ",
-                 "or receive chat = <ellmer Chat> in run_variable().",
-                 call. = FALSE)
-        }
-        .create_ollama_chat(channel$model, channel$model_params)
+    needs_chat <- vapply(variable$channels, .channel_needs_chat, logical(1))
+    if (any(needs_chat) && is.null(chat)) {
+        stop("LLM execution requires chat = <ellmer Chat> for activation(s) ",
+             "in variable '", variable$name, "': ",
+             paste(names(variable$channels)[needs_chat], collapse = ", "), ".",
+             call. = FALSE)
+    }
+    if (any(needs_chat)) .chat_metadata(chat)
+    chats <- lapply(variable$channels, function(channel) {
+        if (.channel_needs_chat(channel)) chat else NULL
     })
     names(chats) <- names(variable$channels)
-    # Preflight every activation before the first model call. This keeps a
-    # multi-model variable atomic when a later Chat is invalid or not approved.
-    invisible(lapply(chats, function(resolved_chat) {
-        if (is.null(resolved_chat)) return(NULL)
-        .require_gated_chat(.chat_metadata(resolved_chat))
-    }))
     chats
 }
 
@@ -403,18 +386,6 @@ APPROVED_MODELS <- c("gemma3:4b")
         temperature = scalar_num("temperature"),
         seed = as.integer(scalar_num("seed")),
         max_tokens = scalar_num("max_tokens"))
-}
-
-.require_gated_chat <- function(metadata) {
-    if (identical(tolower(metadata$provider), "test")) return(invisible(TRUE))
-    if (!metadata$model %in% APPROVED_MODELS &&
-        !nzchar(Sys.getenv("ALLOW_UNGATED_MODEL"))) {
-        stop("Model '", metadata$model,
-             "' has not passed the structured-output grammar gate. Approved: ",
-             paste(APPROVED_MODELS, collapse = ", "),
-             ". Set ALLOW_UNGATED_MODEL=1 to override.", call. = FALSE)
-    }
-    invisible(TRUE)
 }
 
 .chat_partial_response <- function(chat) {
@@ -526,7 +497,6 @@ run_extraction <- function(coverage, candidates, definition, chat,
         stop("candidate_selector must be a function.", call. = FALSE)
     }
     metadata <- .chat_metadata(chat)
-    .require_gated_chat(metadata)
     task_ids <- coverage$task_id[coverage$coverage_state == "candidate"]
     if (sample_n > 0L) task_ids <- utils::head(task_ids, sample_n)
 

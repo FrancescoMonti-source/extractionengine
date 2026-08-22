@@ -25,12 +25,12 @@ leave one non-missing \code{Date} or \code{POSIXt} value per output unit.}
 \pkg{corpustools} \code{tCorpus}. Its metadata must retain the native document
 identifiers and scope fields. Logical package source names are connected to
 caller objects here, for example \code{list(biology = bio, documents = corpus)}.}
-\item{chat}{An optional global \pkg{ellmer} Chat override applied to every LLM
-activation in this run, intended for tests and debugging. When omitted, each
-\code{lucene_llm} activation creates its own Ollama Chat from the \code{model}
-and \code{model_params} declared in \code{use_channel()}. The activation's base
-Chat is deep-cloned and cleared for every task. Deterministic \code{lucene}
-activations do not create a Chat.}
+\item{chat}{A caller-constructed \pkg{ellmer} Chat used by every LLM activation
+in this call. It is required when at least one activation uses
+\code{method = "lucene_llm"} and ignored by deterministic activations. The base
+Chat is deep-cloned and cleared for every task. Provider and model approval are
+outside this package; actual transport metadata is recorded in
+\code{audit$llm_calls}.}
 }
 \value{
 \code{run_variable()} returns exactly \code{values}, \code{channel_status},

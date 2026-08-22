@@ -519,8 +519,6 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
             concept = smoking,
             search_within = "PATID",
             method = "lucene_llm",
-            model = "declared-test-model",
-            model_params = list(temperature = 0, seed = 42),
             response = response,
             max_candidates = max_candidates)),
         output = from_channel("text_tabagisme", group_by = "EVTID"))
@@ -549,7 +547,6 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
         .chat_metadata = function(chat) list(
             provider = "test", model = "fake", params = list(),
             temperature = 0, seed = 1L, max_tokens = 100),
-        .require_gated_chat = function(metadata) invisible(TRUE),
         .call_chat = function(chat, prompt, type, system_prompt, metadata) {
             seen$calls <- seen$calls + 1L
             seen$types[[length(seen$types) + 1L]] <- type
@@ -568,6 +565,12 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
                 output_tokens = 10, inferred_finish_reason = "stop")
         },
         .package = "extractionengine")
+
+    expect_error(
+        run_variable(
+            make_variable(), cohort,
+            sources = list(documents = documents)),
+        "LLM execution requires chat = <ellmer Chat>", fixed = TRUE)
 
     run <- run_variable(
         make_variable(), cohort,
@@ -618,11 +621,12 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
                   names(run$evidence)),
         "evidence_ref")
     expect_identical(
-        c(
-            declared = run$audit$execution_manifest$channels$
-                text_tabagisme$declared_model,
-            observed = run$audit$llm_calls$model),
-        c(declared = "declared-test-model", observed = "fake"))
+        list(
+            declared_fields = intersect(
+                c("declared_model", "declared_model_params"),
+                names(run$audit$execution_manifest$channels$text_tabagisme)),
+            observed_model = run$audit$llm_calls$model),
+        list(declared_fields = character(), observed_model = "fake"))
     expect_identical(
         intersect(
             c("call_status", "response_status", "transport_attempts",

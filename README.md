@@ -296,8 +296,6 @@ tabagisme_enum <- variable_spec(
       concept = tabagisme,
       search_within = "EVTID",
       method = "lucene_llm",
-      model = "gemma3:4b",
-      model_params = list(temperature = 0, seed = 42),
       response = ellmer::type_object(
         "Extraction structurée du statut tabagique.",
         statut_tabagique = ellmer::type_enum(
@@ -314,10 +312,16 @@ tabagisme_enum <- variable_spec(
   output = from_channel("text_tabagisme", group_by = "EVTID")
 )
 
+chat <- ellmer::chat_ollama(
+  model = "gemma3:4b",
+  params = list(temperature = 0, seed = 42)
+)
+
 smoking_result <- run_variable(
   tabagisme_enum,
   cohort = cohort,
-  sources = list(documents = documents)
+  sources = list(documents = documents),
+  chat = chat
 )
 ```
 
@@ -328,6 +332,12 @@ contract. In `use_channel()`, `rationale = TRUE` or omission uses:
 “Justification brève du choix, fondée uniquement sur les extraits et sans ajouter
 d'information non documentée.” A non-empty string overrides that description;
 `FALSE` or `NULL` omits the field.
+
+Provider, model, and model parameters belong to execution rather than to the
+variable specification. The caller constructs one Ellmer Chat and supplies it
+to `run_variable()` or `run_protocol()`; the engine never constructs or approves
+a provider. To use different models in one study, split the variables across
+multiple `run_protocol()` calls over the same cohort and source snapshot.
 
 The package-level system prompt contains only general structured-extraction
 instructions and can be overridden with `system_prompt =`. The engine constructs

@@ -209,11 +209,13 @@ an authored response-to-membership rule, an activation with
 fails explicitly. It may still be published by `from_channel()`, including as a
 payload gated by a combine over deterministic channels.
 
-Each `lucene_llm` activation owns its `model`, `model_params`, response schema,
-and prompt configuration. This permits two activations in one variable to use
-different models. `run_variable(chat =)` is a global test/debug override for all
-LLM activations in that run; execution still isolates conversation state with a
-fresh task clone.
+Each `lucene_llm` activation owns its response schema and prompt configuration.
+Provider, model, and model parameters are execution dependencies: the caller
+constructs one Ellmer Chat and passes it to `run_variable(chat =)` or
+`run_protocol(chat =)`. That Chat serves every LLM activation in the call, while
+execution isolates conversation state with a fresh task clone. A study needing
+different models splits its variables across calls over the same cohort and
+source snapshot.
 
 ## Audit contract
 

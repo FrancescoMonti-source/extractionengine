@@ -611,10 +611,12 @@ Spostato **prima** del lavoro LLM della Fase 4, non in fondo. Se la Fase 4
 prototipa l'esecuzione pigra del modello usando l'interfaccia attuale, la Fase 5
 cambierebbe quell'interfaccia subito dopo.
 
-`use_channel(chat = ellmer::chat_openai(...))`, oppure
-`provider = ellmer::chat_ollama, model = "gemma3:4b"`. L'approvazione dei modelli
-diventa un argomento di run, o sparisce — il modello è già registrato in
-`llm_calls`.
+Decisione chiusa: provider e modello non fanno parte di `use_channel()`. Il
+chiamante costruisce una sola Chat Ellmer e la passa a `run_variable(chat =)` o
+`run_protocol(chat =)`. Se uno studio richiede modelli diversi, divide le
+variabili fra più chiamate sulla stessa coorte e sullo stesso snapshot delle
+sorgenti. Il pacchetto non costruisce provider e non approva modelli; la
+configurazione osservata resta registrata in `llm_calls`.
 
 ---
 

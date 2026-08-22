@@ -1574,12 +1574,6 @@
                      relation = ch$window$relation)
             } else NULL,
             method = ch$method,
-            declared_model = if (identical(ch$method, "lucene_llm")) {
-                ch$model
-            } else NULL,
-            declared_model_params = if (identical(ch$method, "lucene_llm")) {
-                ch$model_params
-            } else NULL,
             response = ch$response,
             user_prompt = ch$user_prompt,
             system_prompt = if (identical(ch$method, "lucene_llm")) {
@@ -1683,8 +1677,7 @@ print.ee_execution_manifest <- function(x, ...) {
             cat("    filter groups by ", channel$group_by, ": configured\n", sep = "")
         }
         if (identical(channel$method, "lucene_llm")) {
-            cat("    model: ", channel$declared_model %||% "Chat override",
-                "\n", sep = "")
+            cat("    chat: supplied at execution\n")
             fields <- .response_field_names(channel$response)
             if (!is.null(channel$rationale)) fields <- c(fields, "rationale")
             cat("    response fields: ", paste(fields, collapse = ", "),
@@ -1841,6 +1834,7 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
     if (!length(variable$channels)) {
         stop("variable_spec has no selected channels.", call. = FALSE)
     }
+    channel_chats <- .resolve_channel_chats(variable, chat)
     tasks <- .resolve_cohort(variable, cohort, sources)
     sources <- .prepare_execution_sources(sources, tasks)
     # Anchor first: a select_event closure may EMIT tasks (one per selected
@@ -1849,10 +1843,6 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
     # "PATID" must fail loudly (DESIGN §7).
     tasks <- .resolve_anchor(variable, tasks, sources)
     grain_keys <- .check_output_grain(variable, tasks)
-    # Resolve one transport per LLM activation. A run_variable(chat=) argument is
-    # a global test/debug override for every LLM activation in this run. Per-task
-    # Chat clones still isolate conversation state within each activation.
-    channel_chats <- .resolve_channel_chats(variable, chat)
     # Scoping rule (DESIGN §7): every activation declares whether it searches
     # within PATID or PATID + EVTID. Windows filter dates inside that relation.
     channel_results <- lapply(names(variable$channels), function(channel_name) {
@@ -1939,8 +1929,8 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
 
 # The protocol run: every variable of a study over ONE declared cohort laid
 # down with the data (sources$cohort), so all outputs share the denominator by
-# construction. Variables execute sequentially in list order: each run resolves
-# every LLM activation's model, then processes its task rows. Today a thin
+# construction. Variables execute sequentially in list order with the caller's
+# Chat, then process their task rows. Today a thin
 # orchestrator; study-level duties (shared channel
 # caching, one combined output table, study provenance bundle) wait for their
 # consumers.
@@ -1986,7 +1976,9 @@ run_protocol <- function(variables, cohort = NULL, sources = NULL,
     # Reject every invalid authoring spec before source normalization begins.
     # run_variable() resolves again at execution time; that cheap duplicate keeps
     # this preflight independent of the execution contract.
-    invisible(lapply(variables, resolve_variable_spec))
+    resolved_variables <- lapply(variables, resolve_variable_spec)
+    invisible(lapply(
+        resolved_variables, .resolve_channel_chats, chat = chat))
 
     # Every variable of a protocol answers about the same declared subject list,
     # so source normalization is a protocol-level cost, not a per-variable one.

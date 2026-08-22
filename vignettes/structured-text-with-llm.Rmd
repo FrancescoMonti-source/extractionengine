@@ -214,8 +214,6 @@ medication_allergy_status <- variable_spec(
       concept = medication_allergy,
       search_within = "EVTID",
       method = "lucene_llm",
-      model = "gemma3:4b",
-      model_params = list(temperature = 0, seed = 42),
       response = allergy_response,
       max_candidates = 6L
     )
@@ -231,11 +229,8 @@ medication_allergy_status
 
 `concept = medication_allergy` identifies the reusable catalog owning
 `allergy_text`; the variable itself has no global concept and could activate
-another concept beside it. `model` and `model_params` also belong to this
-activation because they configure how this particular LLM channel is processed.
-`gemma3:4b` is the model currently
-accepted by the package's structured-output gate; it is an executable example,
-not a general model recommendation.
+another concept beside it. The activation owns its response and prompt contract,
+but not the provider or model: those are supplied when the variable is run.
 
 Unlike deterministic `from_channel()`, an LLM output has no `value =`
 expression. It publishes the complete structured frame: every authored field
@@ -243,7 +238,7 @@ plus the rationale added by the engine. Here `group_by = "EVTID"` constructs one
 task, one model call when candidates exist, and one final result row per stay.
 
 Printing or inspecting the specification resolves its authoring contract but
-does not start Ollama or call the model.
+does not construct a provider or call a model.
 
 ## 5. Run the real model interactively
 
@@ -252,17 +247,23 @@ start Ollama locally and make sure `gemma3:4b` is available, then execute the co
 in an interactive R session.
 
 ```{r real-llm-run, eval = FALSE}
+chat <- ellmer::chat_ollama(
+  model = "gemma3:4b",
+  params = list(temperature = 0, seed = 42)
+)
+
 allergy_run <- run_variable(
   medication_allergy_status,
   cohort = cohort,
-  sources = list(documents = documents)
+  sources = list(documents = documents),
+  chat = chat
 )
 ```
 
-Because the model is declared in `use_channel()`, the engine constructs the
-Ollama Chat and uses `chat_structured()` behind the scenes. `run_variable(chat =)`
-can supply a real Ellmer Chat as a run-wide test or debugging override; it is not
-needed for this normal path.
+The caller owns provider and model construction. `run_variable(chat =)` uses the
+supplied Chat for every LLM activation in this call and deep-clones it for each
+task before invoking `chat_structured()`. Variables that need another model can
+be executed in a separate call over the same cohort and source snapshot.
 
 ## 6. Read the result as four coordinated views
 

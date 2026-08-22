@@ -26,8 +26,6 @@ use_channel(
   search_within,
   window = NULL,
   method = NULL,
-  model = NULL,
-  model_params = list(),
   response = NULL,
   rationale = TRUE,
   user_prompt = NULL,
@@ -81,11 +79,6 @@ does not determine combine, payload, or output grain.}
 \code{c(from_days, to_days)} relative to the variable's explicit anchor.}
 \item{method}{For text channels, \code{"lucene"} or
 \code{"lucene_llm"}; non-text activations leave it \code{NULL}.}
-\item{model}{Optional non-empty Ollama model name owned by this activation.
-It is valid only for \code{lucene_llm} and is required for automatic execution
-unless \code{run_variable()} receives an explicit \pkg{ellmer} Chat override.}
-\item{model_params}{Named parameters used to construct this activation's Chat.
-Non-empty parameters require \code{model}.}
 \item{response}{For \code{lucene_llm}, a native \pkg{ellmer}
 \code{TypeObject} describing every authored response field.}
 \item{rationale}{For \code{lucene_llm}, omission or \code{TRUE} adds the

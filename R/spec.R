@@ -221,7 +221,6 @@ use_channel <- function(channel, concept = NULL, selector = NULL,
                         filter_rows = NULL,
                         group_by = NULL, filter_groups = NULL,
                         search_within, window = NULL, method = NULL,
-                        model = NULL, model_params = list(),
                         response = NULL, rationale = TRUE,
                         user_prompt = NULL, system_prompt = NULL,
                         max_candidates = NULL) {
@@ -258,27 +257,6 @@ use_channel <- function(channel, concept = NULL, selector = NULL,
          !method %in% c("lucene", "lucene_llm"))) {
         stop("use_channel() method must be 'lucene', 'lucene_llm', or NULL.",
               call. = FALSE)
-    }
-    if (!is.null(model) &&
-        (!is.character(model) || length(model) != 1L || is.na(model) ||
-         !nzchar(model))) {
-        stop("use_channel() model must be one non-empty model name or NULL.",
-             call. = FALSE)
-    }
-    if (is.null(model_params)) model_params <- list()
-    if (!is.list(model_params)) {
-        stop("use_channel() model_params must be a named list.",
-             call. = FALSE)
-    }
-    if (length(model_params) &&
-        (is.null(names(model_params)) || anyNA(names(model_params)) ||
-         any(!nzchar(names(model_params))) || anyDuplicated(names(model_params)))) {
-        stop("use_channel() model_params must be a named list with unique ",
-             "non-empty names.", call. = FALSE)
-    }
-    if (is.null(model) && length(model_params)) {
-        stop("use_channel() model_params require model = <model name>.",
-             call. = FALSE)
     }
     for (field in c("user_prompt", "system_prompt")) {
         value <- get(field)
@@ -328,12 +306,11 @@ use_channel <- function(channel, concept = NULL, selector = NULL,
     window <- .as_window(window)
 
     is_llm <- identical(method, "lucene_llm")
-    llm_only_args <- !is.null(model) || length(model_params) ||
-        !is.null(response) || !is.null(user_prompt) ||
+    llm_only_args <- !is.null(response) || !is.null(user_prompt) ||
         !is.null(system_prompt) || !is.null(max_candidates) || !rationale_missing
     if (!is_llm && llm_only_args) {
-        stop("model, model_params, response, rationale, user_prompt, system_prompt, ",
-             "and max_candidates are valid only with method = 'lucene_llm'.",
+        stop("response, rationale, user_prompt, system_prompt, and max_candidates ",
+             "are valid only with method = 'lucene_llm'.",
              call. = FALSE)
     }
     if (is_llm) {
@@ -364,8 +341,7 @@ use_channel <- function(channel, concept = NULL, selector = NULL,
              selector = selector, filter_rows = filter_rows,
              group_by = group_by, filter_groups = filter_groups,
              search_within = search_within, window = window,
-             method = method, model = model, model_params = model_params,
-             response = response, rationale = rationale,
+             method = method, response = response, rationale = rationale,
              user_prompt = user_prompt, system_prompt = system_prompt,
              max_candidates = max_candidates),
         "ee_channel_use")
@@ -710,9 +686,7 @@ print.ee_variable_spec <- function(x, ...) {
             cat("    method: ", channel$method, "\n", sep = "")
         }
         if (identical(channel$method, "lucene_llm")) {
-            cat("    declared model: ",
-                channel$model %||% "run_variable(chat=) override required",
-                "\n", sep = "")
+            cat("    chat: required at execution\n")
             candidate_rule <- if (is.null(channel$max_candidates)) {
                 "all matches"
             } else {
@@ -812,8 +786,6 @@ print.ee_variable_spec <- function(x, ...) {
             search_within = channel_use$search_within,
             window = channel_use$window,
             method = channel_use$method,
-            model = channel_use$model,
-            model_params = channel_use$model_params,
             response = channel_use$response,
             rationale = channel_use$rationale,
             user_prompt = channel_use$user_prompt,
