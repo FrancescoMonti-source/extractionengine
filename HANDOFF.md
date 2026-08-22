@@ -2345,3 +2345,43 @@ not a performance contract.
 **Files changed.** `R/lineage.R`, `R/run_variable.R`,
 `tests/testthat/test-current-contracts.R`, `README.md`, `DESIGN.md`, `PLAN.md`,
 `vignettes/getting-started.Rmd`, `man/run_variable.Rd`, and this entry.
+
+## Phase 4.3 upstream activation lineage (2026-08-22)
+
+**Boundary.** The common relation now covers source eligibility and windowing;
+this does not yet replace every executor frame or schedule payload lazily.
+
+**Change.** Structured activations place every task-associated prepared row in
+lineage at `pre_selector`, advance window survivors to `window`, and let later
+selection/contribution stages supersede those rows. Canonical tCorpus retrieval
+does the same for searchable documents, which remain distinct from the snippets
+they generate. `audit$counts` now derives `pre_selector` and `window` from this
+relation, including explicit zero counts for tasks with no artifacts. The old
+coverage-column count adapter and text-specific upstream counters were removed.
+
+Pre-retrieved text remains intentionally different: it is a stored query result,
+not an enumerable source snapshot, so it starts lineage at snippets and does not
+fabricate upstream document coordinates. Its manifest roster remains marked
+non-enumerable.
+
+**Still open.** Executor `coverage` remains the total task-state relation, and
+structured `observations` still supplies the pre-filter `selector` count when an
+activation has row/group filters. Those contracts must be replaced explicitly;
+an occurrence-only lineage cannot represent why a task has zero rows. Lazy
+payload execution follows that consolidation.
+
+**Sentinels.** A windowed biology case distinguishes one pre-window-only row,
+three window survivors, and two used rows while preserving counts 6/5/4/2. A
+task with no source rows still publishes `pre_selector = 0`. A real Lucene case
+keeps two document artifacts separate from the two snippets they produce.
+
+**Verification.** All 68 current-contract expectations pass with no warnings.
+The four Phase 0 differential cases are unchanged from `phase4-lineage.rds`.
+A full source build creates both vignettes, and `R CMD check --no-manual
+--no-build-vignettes` finishes with `Status: OK`, including tests,
+documentation, and execution of both vignette sources. No real model call was
+made.
+
+**Files changed.** `R/lineage.R`, `R/structured.R`, `R/run_variable.R`,
+`tests/testthat/test-current-contracts.R`, `README.md`, `DESIGN.md`, `PLAN.md`,
+`vignettes/getting-started.Rmd`, `man/run_variable.Rd`, and this entry.

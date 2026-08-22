@@ -633,7 +633,7 @@ Assorbe: il roster vero, il runtime quadratico, la memoria ~9×, e l'esecuzione
 pigra del payload (che richiede di limitare l'esecuzione a livello di singola
 chiave, cosa che l'interfaccia attuale degli esecutori non permette).
 
-**Stato — prime due fette completate (2026-08-22):**
+**Stato — prime tre fette completate (2026-08-22):**
 
 - il roster source-qualified viene costruito una volta dai frame preparati della
   run e alimenta già l'universo dei combine più fini dell'output. La restrizione
@@ -644,11 +644,17 @@ chiave, cosa che l'interfaccia attuale degli esecutori non permette).
   `selected`, `model_input`, `used` e `cited`. La stessa relazione alimenta
   `selection_status`, i conteggi terminali/model-input e le chiavi dei combine
   fini; `audit$internal` e le sue copie integrali dei frame degli esecutori sono
-  stati eliminati.
+  stati eliminati;
+- la stessa relazione include ora `pre_selector` e, quando esiste una finestra,
+  `window`. Per lo strutturato l'artefatto resta la riga preparata; per il testo
+  il documento ricercabile è distinto dagli snippet che può generare. I
+  conteggi a monte derivano dalla relazione anche per task con zero righe; gli
+  input testuali pre-retrieved non inventano un universo documentale che non
+  possiedono.
 
-Restano da portare nella relazione gli stadi a monte (`pre_selector` e `window`),
-da sostituire i vecchi frame durante l'esecuzione, e da rendere pigro il payload:
-**la Fase 4 non è chiusa**.
+Restano da sostituire i vecchi frame durante l'esecuzione — in particolare la
+relazione totale di stato e le osservazioni usate per il confine pre/post filtro
+— e da rendere pigro il payload: **la Fase 4 non è chiusa**.
 
 **Quattro cose da fare bene:**
 

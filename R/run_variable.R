@@ -268,8 +268,8 @@
 # candidates + coverage. Eligibility keeps the document's EVTID when metadata
 # carries it, so a text hit stays attributable to its stay for combine$by.
 .text_eligibility_cols <- function(d) {
-    select(d, any_of(c("task_id", "ELTID", "EVTID", "RECDATE", "RECTYPE",
-                       "anchor_date")))
+    select(d, any_of(c("task_id", "PATID", "EVTID", "ELTID", "RECDATE",
+                       "RECTYPE", "anchor_date")))
 }
 
 .retrieve_text_channel <- function(channel_def, variable, tasks, src, selector) {
@@ -287,16 +287,13 @@
     eligibility <- src$docs_index %>%
         inner_join(keys, by = join_keys, relationship = "many-to-many")
     corpus_ids <- as.character(src$corpus$get_meta("doc_id"))
-    count_searchable <- function(rows, column) {
-        counts <- rows %>%
+    searchable_documents <- function(rows) {
+        rows %>%
             filter(as.character(ELTID) %in% corpus_ids) %>%
-            group_by(task_id) %>%
-            summarise(n = n_distinct(ELTID), .groups = "drop")
-        names(counts)[names(counts) == "n"] <- column
-        counts
+            .lineage_input_rows("document")
     }
-    pre_selector_counts <- count_searchable(
-        eligibility, "n_pre_selector_documents")
+    lineage_inputs <- list(
+        pre_selector = searchable_documents(eligibility))
     if (!is.null(channel_def$window)) {
         if (!inherits(channel_def$window, "ee_window")) {
             stop("Real retrieval requires a compiled relative window.",
@@ -306,18 +303,11 @@
         eligibility <- eligibility %>%
             filter(RECDATE >= anchor_date + w[["from_days"]],
                    RECDATE <= anchor_date + w[["to_days"]])
+        lineage_inputs$window <- searchable_documents(eligibility)
     }
-    window_counts <- if (!is.null(channel_def$window)) {
-        count_searchable(eligibility, "n_window_documents")
-    } else NULL
     eligibility <- .text_eligibility_cols(eligibility)
     result <- retrieve(src$corpus, tasks, eligibility, query = selector$query)
-    result$coverage <- result$coverage %>%
-        left_join(pre_selector_counts, by = "task_id")
-    if (!is.null(window_counts)) {
-        result$coverage <- result$coverage %>%
-            left_join(window_counts, by = "task_id")
-    }
+    result$lineage_inputs <- lineage_inputs
     result
 }
 
@@ -347,17 +337,6 @@
     task_ids <- as.character(text_inputs$coverage$task_id)
     candidates <- text_inputs$candidates
     counts <- list()
-    if ("n_pre_selector_documents" %in% names(text_inputs$coverage)) {
-        counts[[length(counts) + 1L]] <- .audit_stage(
-            task_ids, channel_name, "pre_selector", "document",
-            .audit_coverage_count(
-                text_inputs, task_ids, "n_pre_selector_documents"))
-    }
-    if ("n_window_documents" %in% names(text_inputs$coverage)) {
-        counts[[length(counts) + 1L]] <- .audit_stage(
-            task_ids, channel_name, "window", "document",
-            .audit_coverage_count(text_inputs, task_ids, "n_window_documents"))
-    }
     counts[[length(counts) + 1L]] <- .audit_stage(
         task_ids, channel_name, "selector", "snippet",
         .count_task_rows(candidates, task_ids))
@@ -775,6 +754,7 @@
                           "': ", method, ".", call. = FALSE)
             }
             result$audit_counts <- text_inputs$audit_counts
+            result$lineage_inputs <- text_inputs$lineage_inputs
             result
         },
         stop("No experimental executor for channel type: ", channel_def$type,
@@ -1458,17 +1438,6 @@
 
 # --- normalized audit ----------------------------------------------------------
 
-.audit_coverage_count <- function(result, task_ids, column) {
-    coverage <- result$coverage
-    if (!is.data.frame(coverage) || !column %in% names(coverage)) {
-        return(integer(length(task_ids)))
-    }
-    index <- match(as.character(task_ids), as.character(coverage$task_id))
-    n <- as.integer(coverage[[column]][index])
-    n[is.na(n)] <- 0L
-    n
-}
-
 .channel_audit_counts <- function(variable, channel_name, result, task_ids) {
     channel <- variable$channels[[channel_name]]
     counts <- list()
@@ -1480,29 +1449,40 @@
         "selector"
     }
 
+    upstream_type <- if (identical(channel$type, "text")) {
+        "document"
+    } else {
+        "source_row"
+    }
+    upstream_unit <- upstream_type
+    if ("pre_selector" %in% result$lineage_stages) {
+        counts[[length(counts) + 1L]] <- .audit_stage(
+            task_ids, channel_name, "pre_selector", upstream_unit,
+            .lineage_reached_counts(
+                result, task_ids, "pre_selector", upstream_type))
+    }
+    if ("window" %in% result$lineage_stages) {
+        counts[[length(counts) + 1L]] <- .audit_stage(
+            task_ids, channel_name, "window", upstream_unit,
+            .lineage_reached_counts(
+                result, task_ids, "window", upstream_type))
+    }
+
     if (is.data.frame(result$audit_counts)) {
-        # Text retrieval still owns its upstream document/window counts. The
-        # terminal selection count comes from the common lineage relation.
+        # Text retrieval still records the selector boundary before optional
+        # activation filters. Upstream and terminal counts come from lineage.
         counts[[length(counts) + 1L]] <- result$audit_counts[
             result$audit_counts$stage != selection_stage, , drop = FALSE]
-    } else if (channel$type %in% c("code", "lab", "doc")) {
+    } else if (channel$type %in% c("code", "lab", "doc") &&
+               has_activation_filter) {
+        # The pre-filter selector boundary is the last count still read from the
+        # legacy observation frame. The selected rows themselves are lineage.
+        observations <- result$observations
+        selector_keep <- observations$is_target | observations$row_demoted |
+            observations$group_demoted
         counts[[length(counts) + 1L]] <- .audit_stage(
-            task_ids, channel_name, "pre_selector", "source_row",
-            .audit_coverage_count(result, task_ids, "n_source_rows"))
-        if (inherits(channel$window, "ee_window")) {
-            counts[[length(counts) + 1L]] <- .audit_stage(
-                task_ids, channel_name, "window", "source_row",
-                .audit_coverage_count(result, task_ids, "n_scope_rows"))
-        }
-
-        if (has_activation_filter) {
-            observations <- result$observations
-            selector_keep <- observations$is_target | observations$row_demoted |
-                observations$group_demoted
-            counts[[length(counts) + 1L]] <- .audit_stage(
-                task_ids, channel_name, "selector", "source_row",
-                .count_task_rows(observations, task_ids, selector_keep))
-        }
+            task_ids, channel_name, "selector", "source_row",
+            .count_task_rows(observations, task_ids, selector_keep))
     }
 
     selection_unit <- if (identical(channel$type, "text")) {
@@ -1932,8 +1912,10 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
             variable, channel_name, tasks, sources,
             channel_chats[[channel_name]],
             grain_keys = scope_keys)
+        result$lineage_stages <- names(result$lineage_inputs)
         result$lineage <- .build_channel_lineage(
             variable, channel_name, result)
+        result$lineage_inputs <- NULL
         result
     })
     names(channel_results) <- names(variable$channels)

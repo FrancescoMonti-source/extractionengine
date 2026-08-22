@@ -254,15 +254,19 @@ evidence `EVTID` is published as
 two values are equal.
 
 `audit$lineage` is the common coordinate-only activation relation. One row
-places one `source_row` or task-local `snippet` at the furthest stage it reached:
-`selected`, `model_input`, `used`, or `cited`. Later stages imply earlier
-selection stages; an artifact is not duplicated as an event log. Target grain
-keys remain distinct from
-`source_PATID`/`source_EVTID`/`source_ELTID`; `source_row_ref` resolves against
-the caller-owned source snapshot and `artifact_position` records snippet order.
+places one `source_row`, searchable `document`, or task-local `snippet` at the
+furthest stage it reached: `pre_selector`, `window`, `selected`, `model_input`,
+`used`, or `cited`. Later stages imply earlier stages of the same artifact; an
+artifact is not duplicated as an event log. Documents and snippets remain
+distinct because retrieval is one-to-many. Target grain keys remain distinct
+from `source_PATID`/`source_EVTID`/`source_ELTID`; `source_row_ref` resolves
+against the caller-owned source snapshot and `artifact_position` records snippet
+order.
 This relation is authoritative for operational selection, terminal
-selection/model-input counts, and fine-grain combine placement. It deliberately
-does not copy prepared-source payload.
+selection/model-input counts, upstream eligibility/window counts, and fine-grain
+combine placement. It deliberately does not copy prepared-source payload.
+Pre-retrieved text inputs have no enumerable document universe, so they cannot
+publish document-level upstream lineage and begin at their stored snippets.
 
 `audit$counts` is a long table with output-grain keys, `channel`, `stage`,
 `unit`, and `n`. The controlled stages are `pre_selector`, `window`, `selector`,

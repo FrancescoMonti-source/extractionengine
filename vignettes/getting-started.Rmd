@@ -504,8 +504,10 @@ results$mean_k_in_qualified_stays$audit$counts |>
 ```
 
 `lineage` keeps only artifact coordinates and the furthest stage each artifact
-reached: selected, model-input, used, or cited. Raw executor frames and copied
-source payload are not returned.
+reached: pre-selector, window, selected, model-input, used, or cited. Structured
+rows retain one identity through those stages; searchable documents remain
+distinct from the task-local snippets they generate. Raw executor frames and
+copied source payload are not returned.
 
 ## 8. A checklist for authoring a new variable
 

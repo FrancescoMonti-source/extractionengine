@@ -133,20 +133,20 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
                   names(numeric_run$evidence)),
         "evidence_ref")
 
-    # Phase 4 nucleus: structured selection and contribution use the same
-    # coordinate-only lineage relation that text/LLM uses below. Source payload
-    # is not copied into audit.
+    # Phase 4 nucleus: structured eligibility, selection, and contribution use
+    # one coordinate-only lineage relation. Non-matching rows stop at the
+    # pre-selector boundary; source payload is not copied into audit.
     expect_identical(
         numeric_run$audit$lineage |>
             dplyr::select(
                 stage, artifact_type, artifact_id,
                 source_row_ref, source_ELTID),
         tibble::tibble(
-            stage = "used",
+            stage = c(rep("used", 3), rep("pre_selector", 2)),
             artifact_type = "source_row",
-            artifact_id = sprintf("biology:%08d", 1:3),
-            source_row_ref = sprintf("biology:%08d", 1:3),
-            source_ELTID = paste0("L", 1:3)))
+            artifact_id = sprintf("biology:%08d", 1:5),
+            source_row_ref = sprintf("biology:%08d", 1:5),
+            source_ELTID = paste0("L", 1:5)))
     expect_false("internal" %in% names(numeric_run$audit))
 
     # Executor coverage is a total, closed task relation. Missing tasks and new
@@ -311,6 +311,14 @@ test_that("relational keys control qualification, evidence, and broadcast", {
     expect_identical(
         hb_low_counts$n[match(names(expected_counts), hb_low_counts$stage)],
         unname(expected_counts))
+    expect_identical(
+        event_restricted$audit$lineage |>
+            dplyr::filter(channel == "hb_low") |>
+            dplyr::count(stage, name = "n") |>
+            dplyr::arrange(stage),
+        tibble::tibble(
+            stage = c("pre_selector", "used", "window"),
+            n = c(1L, 2L, 3L)))
     expect_length(
         intersect(
             unique(event_restricted$audit$counts$stage),
@@ -367,6 +375,12 @@ test_that("relational keys control qualification, evidence, and broadcast", {
             hb_gate = c(TRUE, FALSE),
             hb_low = c(TRUE, FALSE),
             qualifies = c(TRUE, FALSE)))
+    expect_identical(
+        broadcast_run$audit$counts$n[
+            broadcast_run$audit$counts$PATID == "P2" &
+            broadcast_run$audit$counts$channel == "hb_gate" &
+            broadcast_run$audit$counts$stage == "pre_selector"],
+        0L)
 
     # Identical text in two source documents is not duplicate relational
     # evidence: both native stay/document keys must survive real retrieval.
@@ -417,6 +431,15 @@ test_that("relational keys control qualification, evidence, and broadcast", {
             ELTID = document_text_run$audit$combine_keys$ELTID[
                 document_text_run$audit$combine_keys$qualifies]),
         c(EVTID = "E2", ELTID = "D2"))
+    expect_identical(
+        event_text_run$audit$lineage |>
+            dplyr::filter(channel == "alpha") |>
+            dplyr::count(artifact_type, stage, name = "n") |>
+            dplyr::arrange(artifact_type, stage),
+        tibble::tibble(
+            artifact_type = c("document", "snippet"),
+            stage = c("pre_selector", "used"),
+            n = c(2L, 2L)))
     expect_identical(
         sort(event_text_run$evidence$source_EVTID[
             event_text_run$evidence$channel == "alpha"]),

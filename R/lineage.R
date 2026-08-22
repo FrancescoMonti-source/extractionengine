@@ -6,6 +6,8 @@
 # downstream selection, combine placement, and terminal audit counts read this
 # relation instead of reconstructing the same facts independently.
 
+.lineage_stage_order <- c(
+    "pre_selector", "window", "selected", "model_input", "used", "cited")
 .lineage_selected_stages <- c("selected", "model_input", "used", "cited")
 .lineage_model_input_stages <- c("model_input", "cited")
 .lineage_contributing_stages <- c("used", "cited")
@@ -31,16 +33,35 @@
         rep(NA_character_, nrow(rows))
 }
 
+.lineage_input_rows <- function(rows, artifact_type) {
+    id_column <- switch(
+        artifact_type,
+        source_row = "source_row_id",
+        document = "ELTID",
+        stop("Unsupported upstream lineage artifact type: ", artifact_type,
+             call. = FALSE))
+    required <- c("task_id", id_column)
+    missing <- setdiff(required, names(rows))
+    if (length(missing)) {
+        stop("Upstream lineage rows are missing ",
+             paste(missing, collapse = ", "), ".", call. = FALSE)
+    }
+    columns <- unique(c(required, intersect(.identity_spine, names(rows))))
+    dplyr::distinct(tibble::as_tibble(rows)[columns])
+}
+
 .lineage_artifact_rows <- function(rows, variable_name, channel_name,
                                    source_name, stage, artifact_type) {
     if (!is.data.frame(rows) || !nrow(rows)) {
         return(.empty_activation_lineage())
     }
-    id_column <- if (identical(artifact_type, "snippet")) {
-        "snippet_id"
-    } else {
-        "source_row_id"
-    }
+    id_column <- switch(
+        artifact_type,
+        snippet = "snippet_id",
+        source_row = "source_row_id",
+        document = "ELTID",
+        stop("Unsupported lineage artifact type: ", artifact_type,
+             call. = FALSE))
     required <- c("task_id", id_column)
     missing <- setdiff(required, names(rows))
     if (length(missing)) {
@@ -109,7 +130,28 @@
             stage, artifact_type)
     }
 
-    rows <- list(make_rows(result$candidates, "selected"))
+    lineage_inputs <- result$lineage_inputs
+    if (is.null(lineage_inputs)) lineage_inputs <- list()
+    if (!is.list(lineage_inputs) ||
+        (length(lineage_inputs) > 0L && is.null(names(lineage_inputs)))) {
+        stop("Channel lineage inputs must be a named list.", call. = FALSE)
+    }
+    unknown_stages <- setdiff(names(lineage_inputs), c("pre_selector", "window"))
+    if (length(unknown_stages)) {
+        stop("Unsupported upstream lineage stage(s): ",
+             paste(unknown_stages, collapse = ", "), ".", call. = FALSE)
+    }
+    upstream_type <- if (identical(channel$type, "text")) {
+        "document"
+    } else {
+        "source_row"
+    }
+    rows <- lapply(names(lineage_inputs), function(stage) {
+        .lineage_artifact_rows(
+            lineage_inputs[[stage]], variable$name, channel_name,
+            channel$source, stage, upstream_type)
+    })
+    rows[[length(rows) + 1L]] <- make_rows(result$candidates, "selected")
     if (.channel_needs_chat(channel)) {
         model_input <- make_rows(result$model_candidates, "model_input")
         cited <- make_rows(result$evidence, "cited")
@@ -134,9 +176,9 @@
 
     # `stage` is the furthest stage reached, not an event log. One artifact thus
     # occupies one row even when it was selected, passed to the model, and cited.
-    stage_order <- c("selected", "model_input", "used", "cited")
     lineage %>%
-        dplyr::mutate(.stage_rank = match(.data$stage, stage_order)) %>%
+        dplyr::mutate(
+            .stage_rank = match(.data$stage, .lineage_stage_order)) %>%
         dplyr::arrange(
             .data$task_id, .data$artifact_type, .data$artifact_id,
             dplyr::desc(.data$.stage_rank)) %>%
@@ -157,11 +199,26 @@
     lineage[lineage$stage %in% stages, , drop = FALSE]
 }
 
-.lineage_stage_counts <- function(result, task_ids, stages) {
+.lineage_stage_counts <- function(result, task_ids, stages,
+                                  artifact_type = NULL) {
     rows <- .lineage_stage_rows(result, stages)
+    if (!is.null(artifact_type)) {
+        rows <- rows[rows$artifact_type %in% artifact_type, , drop = FALSE]
+    }
     tabulate(
         match(as.character(rows$task_id), as.character(task_ids)),
         nbins = length(task_ids))
+}
+
+.lineage_reached_counts <- function(result, task_ids, stage, artifact_type) {
+    target_rank <- match(stage, .lineage_stage_order)
+    if (is.na(target_rank)) {
+        stop("Unknown lineage stage: ", stage, ".", call. = FALSE)
+    }
+    reached <- .lineage_stage_order[
+        seq.int(target_rank, length(.lineage_stage_order))]
+    .lineage_stage_counts(
+        result, task_ids, reached, artifact_type = artifact_type)
 }
 
 .build_audit_lineage <- function(channel_results) {

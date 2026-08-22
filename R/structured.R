@@ -349,6 +349,15 @@
     }
 }
 
+.structured_lineage_inputs <- function(pre_selector, scoped, windowed) {
+    inputs <- list(
+        pre_selector = .lineage_input_rows(pre_selector, "source_row"))
+    if (windowed) {
+        inputs$window <- .lineage_input_rows(scoped, "source_row")
+    }
+    inputs
+}
+
 # --- generic code presence: a code family over a coded source ------------------
 # Neutral structured executor behind a run_variable() code channel over a coded
 # source (for example CIM-10 / pmsi$diag or CCAM / pmsi$actes). Per task it marks
@@ -401,13 +410,13 @@ measure_code_presence <- function(source_table, tasks, codes,
     for (k in setdiff(grain_keys, "PATID")) tkeys[[k]] <- as.character(tasks[[k]])
     if (windowed) tkeys$anchor_date <- .clinical_date(tasks$anchor_date)
 
-    source_counts <- rows %>%
-        filter(!is.na(PATID)) %>%
-        group_by(across(all_of(grain_keys))) %>%
+    pre_selector <- rows %>%
+        inner_join(tkeys, by = grain_keys, relationship = "many-to-many")
+    source_counts <- pre_selector %>%
+        group_by(task_id) %>%
         summarise(n_source_rows = n(), .groups = "drop")
 
-    scoped <- rows %>%
-        inner_join(tkeys, by = grain_keys, relationship = "many-to-many")
+    scoped <- pre_selector
     if (windowed) {
         scoped <- scoped %>% filter(.overlaps_interval(
             .data$.ee_t_start, .data$.ee_t_end,
@@ -444,7 +453,7 @@ measure_code_presence <- function(source_table, tasks, codes,
             n_matching_rows = sum(is_target),
             .groups = "drop")
     coverage <- tkeys %>%
-        left_join(source_counts, by = grain_keys) %>%
+        left_join(source_counts, by = "task_id") %>%
         left_join(counts, by = "task_id") %>%
         mutate(
             across(c(n_source_rows, n_scope_rows, n_matching_rows),
@@ -487,7 +496,9 @@ measure_code_presence <- function(source_table, tasks, codes,
         values = values,
         candidates = candidates,
         evidence = evidence,
-        observations = observations)
+        observations = observations,
+        lineage_inputs = .structured_lineage_inputs(
+            pre_selector, scoped, windowed))
 }
 
 # --- generic document presence: metadata-selected docs_index rows ---------------
@@ -528,13 +539,13 @@ measure_doc_presence <- function(docs_index, tasks, filters,
     for (k in setdiff(grain_keys, "PATID")) tkeys[[k]] <- as.character(tasks[[k]])
     if (windowed) tkeys$anchor_date <- .clinical_date(tasks$anchor_date)
 
-    source_counts <- rows %>%
-        filter(!is.na(PATID)) %>%
-        group_by(across(all_of(grain_keys))) %>%
+    pre_selector <- rows %>%
+        inner_join(tkeys, by = grain_keys, relationship = "many-to-many")
+    source_counts <- pre_selector %>%
+        group_by(task_id) %>%
         summarise(n_source_rows = n(), .groups = "drop")
 
-    scoped <- rows %>%
-        inner_join(tkeys, by = grain_keys, relationship = "many-to-many")
+    scoped <- pre_selector
     if (windowed) {
         scoped <- scoped %>% filter(.within_point(
             .data$.ee_doc_date,
@@ -574,7 +585,7 @@ measure_doc_presence <- function(docs_index, tasks, filters,
             n_matching_rows = sum(is_target),
             .groups = "drop")
     coverage <- tkeys %>%
-        left_join(source_counts, by = grain_keys) %>%
+        left_join(source_counts, by = "task_id") %>%
         left_join(counts, by = "task_id") %>%
         mutate(
             across(c(n_source_rows, n_scope_rows, n_matching_rows),
@@ -622,7 +633,9 @@ measure_doc_presence <- function(docs_index, tasks, filters,
         values = values,
         candidates = candidates,
         evidence = evidence,
-        observations = observations)
+        observations = observations,
+        lineage_inputs = .structured_lineage_inputs(
+            pre_selector, scoped, windowed))
 }
 
 # --- generic analyte candidates: selected prepared rows in a point-window -------
@@ -676,13 +689,13 @@ measure_analyte_values <- function(source_table, tasks, analytes,
     if (windowed) tkeys$anchor_date <- .clinical_date(tasks$anchor_date)
     target_analytes <- toupper(trimws(as.character(analytes)))
 
-    source_counts <- biol %>%
-        filter(!is.na(PATID)) %>%
-        group_by(across(all_of(grain_keys))) %>%
+    pre_selector <- biol %>%
+        inner_join(tkeys, by = grain_keys, relationship = "many-to-many")
+    source_counts <- pre_selector %>%
+        group_by(task_id) %>%
         summarise(n_source_rows = n(), .groups = "drop")
 
-    scoped <- biol %>%
-        inner_join(tkeys, by = grain_keys, relationship = "many-to-many")
+    scoped <- pre_selector
     if (windowed) {
         scoped <- scoped %>%
             filter(.within_point(.data$.ee_point_date,
@@ -719,7 +732,7 @@ measure_analyte_values <- function(source_table, tasks, analytes,
             .groups = "drop")
 
     coverage <- tkeys %>%
-        left_join(source_counts, by = grain_keys) %>%
+        left_join(source_counts, by = "task_id") %>%
         left_join(counts, by = "task_id") %>%
         mutate(
             across(c(n_source_rows, n_scope_rows, n_candidate_rows),
@@ -768,5 +781,7 @@ measure_analyte_values <- function(source_table, tasks, analytes,
         values = values,
         candidates = candidates,
         evidence = evidence,
-        observations = observations)
+        observations = observations,
+        lineage_inputs = .structured_lineage_inputs(
+            pre_selector, scoped, windowed))
 }

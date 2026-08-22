@@ -423,16 +423,20 @@ When a row carries a native `EVTID`, it is published as `source_EVTID`; an outpu
 interchangeable.
 
 `audit$lineage` is the coordinate-only long relation shared by structured,
-Lucene, and LLM activations. Each row identifies one source row or task-local
-snippet and the furthest stage it reached: `selected`, `model_input`, `used`, or
-`cited`. A later stage implies the earlier selection stages; the table does not
-duplicate an artifact once per transition.
+Lucene, and LLM activations. Each row identifies one source row, searchable
+document, or task-local snippet and the furthest stage it reached:
+`pre_selector`, `window`, `selected`, `model_input`, `used`, or `cited`. A later
+stage implies the earlier stages of the same artifact; the table does not
+duplicate an artifact once per transition. Text documents remain distinct from
+their snippets because one document can produce several snippets.
 Output-grain columns identify the target task; `source_PATID`, `source_EVTID`,
 and `source_ELTID` identify the source occurrence when available.
 `artifact_position` preserves snippet order, while `source_row_ref` points back
 to the caller's source snapshot without copying its payload. Selection status,
-terminal selection/model-input counts, and fine-grain combine placement are
-derived from this relation.
+upstream/terminal counts, model-input counts, and fine-grain combine placement
+are derived from this relation. Pre-retrieved text inputs cannot enumerate
+documents that did not match their stored query result, so their lineage starts
+at snippets; the execution manifest marks that source as non-enumerable.
 
 `run_protocol()` accepts either an entirely unnamed variable list or an entirely
 named one whose names exactly equal each `spec$name` in the same order. Canonical
