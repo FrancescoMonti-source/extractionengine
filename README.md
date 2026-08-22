@@ -428,7 +428,10 @@ interchangeable.
 `audit$lineage` is the coordinate-only long relation shared by structured,
 Lucene, and LLM activations. Each row identifies one source row, searchable
 document, or task-local snippet and the `furthest_stage` it reached:
-`pre_selector`, `window`, `selected`, `model_input`, `used`, or `cited`. A later
+`pre_selector`, `window`, `selector`, `selected`, `model_input`, `used`, or
+`cited`. An artifact that matched the channel selector and was then demoted by
+`filter_rows` or `filter_groups` stops at `selector`, which is what separates it
+from one that never matched at all. A later
 stage implies the earlier stages of the same artifact; the table does not
 duplicate an artifact once per transition. Counting rows by `furthest_stage`
 therefore gives disjoint buckets, unlike the cumulative `audit$counts$stage`.

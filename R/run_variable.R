@@ -60,11 +60,10 @@
         n = as.integer(n))
 }
 
-.count_task_rows <- function(rows, task_ids, keep = NULL) {
+.count_task_rows <- function(rows, task_ids) {
     if (!is.data.frame(rows) || !nrow(rows) || !"task_id" %in% names(rows)) {
         return(integer(length(task_ids)))
     }
-    if (!is.null(keep)) rows <- rows[keep %in% TRUE, , drop = FALSE]
     index <- match(as.character(rows$task_id), as.character(task_ids))
     tabulate(index[!is.na(index)], nbins = length(task_ids))
 }
@@ -214,10 +213,12 @@
     list(coverage = coverage, candidates = candidates)
 }
 
-# A text channel's {coverage, candidates} either come PRE-RETRIEVED (fixtures, for
-# tests/debugging) or are produced by REAL retrieval from a metadata-rich tCorpus.
-# This is the seam that makes run_variable() a real entry
-# point into retrieval instead of always being handed coverage/candidates.
+# A text channel's candidates either come PRE-RETRIEVED (fixtures, for
+# tests/debugging) or are produced by REAL retrieval from a metadata-rich
+# tCorpus. This is the seam that makes run_variable() a real entry point into
+# retrieval instead of always being handed candidates. The pre-retrieved form
+# still declares per-task document eligibility, which is the one fact a stored
+# query result cannot observe about itself.
 .resolve_text_inputs <- function(src, channel_def, variable, tasks, selector) {
     if (is.list(src) && all(c("coverage", "candidates") %in% names(src))) {
         coverage <- src$coverage
@@ -249,8 +250,18 @@
         .validate_pre_retrieved_text(
             coverage, candidates, tasks, channel_def$required_roles,
             channel_def$search_within)
-        return(.apply_pre_retrieved_text_window(
-            coverage, candidates, tasks, channel_def$window))
+        windowed <- .apply_pre_retrieved_text_window(
+            coverage, candidates, tasks, channel_def$window)
+        # A pre-retrieved input is a stored query result, not an enumerable
+        # snapshot: the engine cannot tell "no document existed" from "documents
+        # existed and none matched", so the caller declares it. Everything else
+        # about the activation is observed and lives in the lineage.
+        return(list(
+            candidates = windowed$candidates,
+            declared_eligibility = tibble::tibble(
+                task_id = as.character(windowed$coverage$task_id),
+                eligible = as.character(windowed$coverage$coverage_state) !=
+                    "no_eligible_document")))
     }
     raw <- .raw_document_source(src)
     if (!is.null(raw)) {
@@ -312,29 +323,20 @@
 }
 
 # Deterministic text presence: a Lucene match is the measured signal. No prompt,
-# schema, parser, or Chat participates in this path.
+# schema, parser, or Chat participates in this path, and no per-task state is
+# summarised: a snippet that survived retrieval and the activation filters is
+# the hit, and the lineage already holds it.
 .run_lucene_presence <- function(text_inputs) {
-    coverage <- text_inputs$coverage %>%
-        mutate(processing_state = case_when(
-            coverage_state == "no_eligible_document" ~ "no_eligible_document",
-            coverage_state == "no_candidate" ~ "no_candidate",
-            coverage_state == "candidate" ~ "measured",
-            TRUE ~ "processing_error"))
-    values <- text_inputs$candidates %>%
-        distinct(task_id) %>%
-        transmute(task_id = as.character(task_id), accepted_value = "present")
     list(
-        coverage = coverage,
-        values = values,
         evidence = text_inputs$candidates,
         attempts = tibble::tibble(),
         candidates = text_inputs$candidates,
         model_candidates = text_inputs$candidates[0, , drop = FALSE])
 }
 
-.filter_text_candidates <- function(text_inputs, filter_rows, group_by,
+.filter_text_candidates <- function(text_inputs, tasks, filter_rows, group_by,
                                     filter_groups, channel_name) {
-    task_ids <- as.character(text_inputs$coverage$task_id)
+    task_ids <- as.character(tasks$task_id)
     candidates <- text_inputs$candidates
     counts <- list()
     counts[[length(counts) + 1L]] <- .audit_stage(
@@ -354,24 +356,12 @@
         candidates$is_target <- NULL
         candidates$row_demoted <- NULL
         candidates$group_demoted <- NULL
-    }
-    if (!is.null(filter_rows) || !is.null(filter_groups)) {
         counts[[length(counts) + 1L]] <- .audit_stage(
             task_ids, channel_name, "filtered_selector", "snippet",
             .count_task_rows(candidates, task_ids))
     }
     text_inputs$candidates <- candidates
     text_inputs$audit_counts <- dplyr::bind_rows(counts)
-    surviving_tasks <- unique(as.character(text_inputs$candidates$task_id))
-    if ("n_snippets" %in% names(text_inputs$coverage)) {
-        counts <- table(as.character(text_inputs$candidates$task_id))
-        text_inputs$coverage$n_snippets <- as.integer(
-            counts[as.character(text_inputs$coverage$task_id)])
-        text_inputs$coverage$n_snippets[is.na(text_inputs$coverage$n_snippets)] <- 0L
-    }
-    demoted <- text_inputs$coverage$coverage_state == "candidate" &
-        !as.character(text_inputs$coverage$task_id) %in% surviving_tasks
-    text_inputs$coverage$coverage_state[demoted] <- "no_candidate"
     text_inputs
 }
 
@@ -732,7 +722,7 @@
             text_inputs <- .resolve_text_inputs(sources[[source]], channel_def,
                                                  variable, tasks, selector)
             text_inputs <- .filter_text_candidates(
-                text_inputs, channel_def$filter_rows,
+                text_inputs, tasks, channel_def$filter_rows,
                 channel_def$group_by, channel_def$filter_groups,
                 channel_name)
             if (identical(method, "lucene")) {
@@ -745,7 +735,7 @@
                 }
                 definition <- .compile_llm_channel(channel_def, variable)
                 result <- run_extraction(
-                    text_inputs$coverage, text_inputs$candidates,
+                    tasks, text_inputs$candidates,
                     definition, chat,
                     .candidate_selector(channel_def$max_candidates),
                     query = selector$query)
@@ -755,6 +745,7 @@
             }
             result$audit_counts <- text_inputs$audit_counts
             result$lineage_inputs <- text_inputs$lineage_inputs
+            result$declared_eligibility <- text_inputs$declared_eligibility
             result
         },
         stop("No experimental executor for channel type: ", channel_def$type,
@@ -773,32 +764,25 @@
     task_ids <- as.character(task_ids)
     variable_name <- variable$name
     source_name <- .source_name_for_channel(channel_name, variable)
-    states <- .states_for_tasks(result, task_ids)
     channel <- .channel_def(variable, channel_name)
     is_llm <- identical(channel$type, "text") &&
         identical(channel$method, "lucene_llm")
-    allowed_states <- if (is_llm) {
-        c("no_eligible_document", "no_candidate", "not_called", "valid",
-          "invalid", "model_error", "processing_error")
-    } else {
-        c("no_eligible_source", "no_eligible_document", "no_candidate",
-          "measured")
-    }
-    .check_processing_states(
-        states, allowed_states, paste0("Channel '", channel_name, "'"))
-    candidate_counts <- .candidate_counts_for_tasks(result, task_ids)
-    selection_status <- ifelse(candidate_counts > 0L, "matched", "no_match")
-    selection_status[states %in%
-        c("no_eligible_source", "no_eligible_document")] <- "unavailable"
-
+    # Selection and processing are two relations, not two readings of one state:
+    # whether the activation had a universe to search and what it selected are
+    # activation facts, while the model call is the attempts relation.
+    eligible <- .activation_eligibility(result, task_ids)
     processing_status <- rep("not_required", length(task_ids))
     if (is_llm) {
+        states <- .llm_call_states(result, task_ids)
         processing_status[] <- "not_called"
         processing_status[states %in% "valid"] <- "completed"
         processing_status[states %in% "invalid"] <- "invalid"
         processing_status[states %in%
             c("model_error", "processing_error")] <- "failed"
     }
+    candidate_counts <- .candidate_counts_for_tasks(result, task_ids)
+    selection_status <- ifelse(candidate_counts > 0L, "matched", "no_match")
+    selection_status[!eligible] <- "unavailable"
 
     tibble::tibble(
         task_id = task_ids,
@@ -831,7 +815,7 @@
     reduced <- if (is_llm) {
         .reduce_llm_channel_result(result, task_ids)
     } else {
-        .deterministic_hits_for_tasks(result, task_ids, channel_name)
+        .deterministic_hits_for_tasks(result, task_ids)
     }
     values <- tibble::tibble(
         task_id = task_ids,
@@ -1134,7 +1118,7 @@
     }
     task_ids <- as.character(tasks$task_id)
     authored <- names(prototype)
-    states <- .states_for_tasks(result, task_ids)
+    states <- .llm_call_states(result, task_ids)
     value_index <- .task_row_index(
         result$values, task_ids, character(), "Channel values",
         allow_columnless_empty = TRUE)
@@ -1317,7 +1301,7 @@
     task_ids <- as.character(tasks$task_id)
 
     reduced <- lapply(declared, function(ch) {
-        .deterministic_hits_for_tasks(channel_results[[ch]], task_ids, ch)
+        .deterministic_hits_for_tasks(channel_results[[ch]], task_ids)
     })
     names(reduced) <- declared
 
@@ -1473,16 +1457,15 @@
         # activation filters. Upstream and terminal counts come from lineage.
         counts[[length(counts) + 1L]] <- result$audit_counts[
             result$audit_counts$stage != selection_stage, , drop = FALSE]
-    } else if (channel$type %in% c("code", "lab", "doc") &&
-               has_activation_filter) {
-        # The pre-filter selector boundary is the last count still read from the
-        # legacy observation frame. The selected rows themselves are lineage.
-        observations <- result$observations
-        selector_keep <- observations$is_target | observations$row_demoted |
-            observations$group_demoted
+    } else if (has_activation_filter &&
+               "selector" %in% result$lineage_stages) {
+        # The pre-filter selector boundary is a lineage count. Without an
+        # activation filter it would repeat the selection stage below, which is
+        # then named `selector` itself.
         counts[[length(counts) + 1L]] <- .audit_stage(
             task_ids, channel_name, "selector", "source_row",
-            .count_task_rows(observations, task_ids, selector_keep))
+            .lineage_reached_counts(
+                result, task_ids, "selector", "source_row"))
     }
 
     selection_unit <- if (identical(channel$type, "text")) {

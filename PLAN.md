@@ -666,7 +666,7 @@ Assorbe: il roster vero, il runtime quadratico, la memoria ~9×, e l'esecuzione
 pigra del payload (che richiede di limitare l'esecuzione a livello di singola
 chiave, cosa che l'interfaccia attuale degli esecutori non permette).
 
-**Stato — prime tre fette completate (2026-08-22):**
+**Stato — quattro fette su cinque completate (2026-08-23):**
 
 - il roster source-qualified viene costruito una volta dai frame preparati della
   run e alimenta già l'universo dei combine più fini dell'output. La restrizione
@@ -691,9 +691,17 @@ ferma al pre-selettore è contata lì e in nessun altro posto) mentre
 `audit$counts$stage` è **cumulativo**. Due significati, due nomi: è la stessa
 ambiguità del difetto C, evitata prima di spedirla.
 
-Restano da sostituire i vecchi frame durante l'esecuzione — in particolare la
-relazione totale di stato e le osservazioni usate per il confine pre/post filtro
-— e da rendere pigro il payload: **la Fase 4 non è chiusa**.
+La quarta fetta ha ritirato i due frame rimasti. Gli esecutori non riassumono
+più i task: `coverage`, `values` e `observations` sono spariti dai tre esecutori
+strutturati, il join `final_coverage` del percorso LLM è stato cancellato e lo
+stato della chiamata si legge da `attempts`. La lineage ha un nuovo stadio
+`selector`, fra `window` e `selected`, dove si ferma un artefatto demoto da un
+filtro di attivazione: è ciò che ha permesso di ritirare `observations` senza
+perdere il confine pre/post filtro. L'unico fatto dichiarato invece che
+osservato resta l'eleggibilità dei testi pre-recuperati. *[misurato]* 286 righe
+cancellate contro 170 aggiunte sotto `R/`.
+
+Resta da rendere pigro il payload: **la Fase 4 non è chiusa**.
 
 **Quattro cose da fare bene:**
 
@@ -899,10 +907,9 @@ tutto il resto: si possono fare in qualsiasi ordine. Il punto 1.10 deve preceder
 la prima preparazione costosa delle sorgenti; 1.4 è una dichiarazione di confine,
 non plumbing da coordinare con 1.3.
 
-**Stato al 2026-08-22.** Fasi 0, 1, 2, 3 e 3b sono committate sul ramo
-`phase-0-cleanup`, che non è ancora entrato in `master`; la Fase 4 è a tre fette
-su cinque. Con 1.3 chiuso **non resta nessun difetto conosciuto che pubblichi un
-valore falso**. Il lavoro aperto è la Fase 4: sostituire `coverage` come
-relazione totale di stato e le `observations` usate per il confine pre/post
-filtro, poi rendere pigro il payload; più le due decisioni di fine fase (crescita
-della lineage sul profilo vero, guardia sul roster incompleto).
+**Stato al 2026-08-23.** Fasi 0, 1, 2, 3 e 3b sono committate sul ramo
+`phase-0-cleanup`, che non è ancora entrato in `master`; la Fase 4 è a quattro
+fette su cinque. Con 1.3 chiuso **non resta nessun difetto conosciuto che
+pubblichi un valore falso**. Il lavoro aperto è l'ultima fetta della Fase 4 —
+rendere pigro il payload (difetto E) — più le due decisioni di fine fase
+(crescita della lineage sul profilo vero, guardia sul roster incompleto).

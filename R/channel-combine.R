@@ -1,11 +1,12 @@
 # =============================================================================
 # channel-combine.R — task-keyed executor views and membership reduction
 # -----------------------------------------------------------------------------
-# Reads ONE selected channel's coverage/value views as total task-keyed relations.
-# Deterministic assemblers consume only a three-valued observed hit
-# (TRUE / FALSE / NA); they do not translate executor facts into a public
-# completeness label. The legacy status reducer remains isolated to the LLM
-# membership path, whose contract is not rewritten in Phase 3.
+# Reduces ONE selected activation to the three-valued observed hit
+# (TRUE / FALSE / NA) that the deterministic assemblers consume; no executor
+# fact is translated into a public completeness label. The two inputs are the
+# activation lineage and, for a model activation, the attempts relation: no
+# executor publishes a per-task state frame any more. The LLM membership path
+# keeps its own public status vocabulary until that contract is rewritten.
 #
 # "source" is reserved for the warehouse/raw data source (e.g. pmsi_diag, documents,
 # biology); a channel reads FROM a source but is not the source. The only raw-source
@@ -19,8 +20,8 @@
 # =============================================================================
 
 # Return the position of each declared task in a task-keyed executor view. The
-# assemblers have always assumed at most one coverage/value row per task; make
-# that invariant executable instead of silently taking the first match.
+# assemblers have always assumed at most one value row per task; make that
+# invariant executable instead of silently taking the first match.
 .task_row_index <- function(frame, task_ids, required, frame_name,
                             allow_columnless_empty = FALSE) {
     if (!is.data.frame(frame)) {
@@ -42,34 +43,6 @@
     match(as.character(task_ids), frame_ids)
 }
 
-.states_for_tasks <- function(result, task_ids) {
-    index <- .task_row_index(
-        result$coverage, task_ids, "processing_state", "Channel coverage")
-    coverage_ids <- as.character(result$coverage$task_id)
-    task_ids <- as.character(task_ids)
-    missing_ids <- task_ids[is.na(index)]
-    unexpected_ids <- setdiff(coverage_ids, task_ids)
-    if (length(missing_ids) || length(unexpected_ids)) {
-        details <- c(
-            if (length(missing_ids)) {
-                paste0("missing: ", paste(missing_ids, collapse = ", "))
-            },
-            if (length(unexpected_ids)) {
-                paste0("unexpected: ", paste(unexpected_ids, collapse = ", "))
-            })
-        stop("Channel coverage must contain exactly one row for every task_id (",
-             paste(details, collapse = "; "), ").", call. = FALSE)
-    }
-    as.character(result$coverage$processing_state[index])
-}
-
-.check_processing_states <- function(states, allowed, context) {
-    unexpected <- unique(states[is.na(states) | !states %in% allowed])
-    if (!length(unexpected)) return(invisible(states))
-    labels <- ifelse(is.na(unexpected), "<NA>", unexpected)
-    stop(context, " returned unsupported processing_state value(s): ",
-         paste(labels, collapse = ", "), ".", call. = FALSE)
-}
 
 .accepted_values_for_tasks <- function(result, task_ids) {
     index <- .task_row_index(
@@ -81,42 +54,32 @@
     accepted
 }
 
-# Reduce deterministic executor facts directly to observed membership. Missing
-# source rows remain NA in the audit vector; no selected candidate is FALSE.
-.deterministic_hits_for_tasks <- function(res, task_ids, channel_name) {
-    states <- .states_for_tasks(res, task_ids)
-    allowed <- c(
-        "measured", "no_candidate", "no_eligible_source",
-        "no_eligible_document")
-    .check_processing_states(
-        states, allowed, paste0("Deterministic channel '", channel_name, "'"))
-    accepted <- .accepted_values_for_tasks(res, task_ids)
-
+# Deterministic membership is two facts about the activation and nothing else:
+# whether the task had a universe to search at all, and whether any artifact
+# reached `selected`. A task the engine never looked at stays NA; a task it
+# looked at and found nothing in is FALSE.
+.deterministic_hits_for_tasks <- function(res, task_ids) {
+    eligible <- .activation_eligibility(res, task_ids)
+    selected <- .lineage_stage_counts(res, task_ids, .lineage_selected_stages)
     hit <- rep(NA, length(task_ids))
-    measured <- states == "measured"
-    hit[measured] <- !is.na(accepted[measured]) &
-        accepted[measured] == "present"
-    hit[states == "no_candidate"] <- FALSE
-
+    hit[eligible] <- selected[eligible] > 0L
     tibble::tibble(
         task_id = as.character(task_ids),
         hit = hit)
 }
 
-# The LLM membership path still consumes the historical status vocabulary. Keep
-# that translation explicit and closed until the LLM contract is rewritten.
+# The LLM membership path keeps its own public status vocabulary, but reads it
+# from the model-call relation rather than from a coverage label that had merged
+# retrieval and the call into one state machine. A task that was never called --
+# because nothing was retrieved for it, or because it had no documents at all --
+# is unavailable; retrieval itself is counted in the lineage.
 .reduce_llm_channel_result <- function(res, task_ids) {
-    states <- .states_for_tasks(res, task_ids)
-    allowed <- c(
-        "valid", "no_candidate", "no_eligible_document", "not_called",
-        "invalid", "model_error", "processing_error")
-    .check_processing_states(states, allowed, "LLM channel")
+    states <- .llm_call_states(res, task_ids)
     accepted <- .accepted_values_for_tasks(res, task_ids)
 
     status <- rep(NA_character_, length(task_ids))
     status[states == "valid"] <- "complete"
-    status[states %in%
-        c("no_candidate", "no_eligible_document", "not_called")] <- "unavailable"
+    status[states == "not_called"] <- "unavailable"
     status[states == "invalid"] <- "invalid"
     status[states %in% c("model_error", "processing_error")] <- "error"
 

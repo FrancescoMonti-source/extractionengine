@@ -6,8 +6,9 @@
 # temporary subset_meta(copy=TRUE) of the persisted canonical corpus; assembles
 # model-visible snippets (snippet_id + bracketed snippet_text) with separate
 # ELTID::sentence provenance; deduplicates by normalized HIT SENTENCE while
-# retaining removed refs/dates as audit; reports three coverage states. Knows
-# nothing clinical.
+# retaining removed refs/dates as audit. It reports what it retrieved and no
+# per-task state: which documents a task could search is already recorded as
+# lineage upstream. Knows nothing clinical.
 # =============================================================================
 
 # Deterministic normalized untokenizer (single tested punctuation policy).
@@ -155,21 +156,8 @@ retrieve <- function(corpus, tasks, eligibility, query,
         stop("Task-local snippet IDs must be unique.", call. = FALSE)
     }
 
-    n_elig <- elig %>% group_by(task_id) %>%
-        summarise(n_eligible_documents = n_distinct(ELTID),
-                  n_searchable_documents = n_distinct(ELTID[in_corpus]), .groups = "drop")
-    n_cand <- candidates %>% group_by(task_id) %>%
-        summarise(n_snippets = n(), .groups = "drop")
-
-    coverage <- tasks %>%
-        left_join(n_elig, by = "task_id") %>%
-        left_join(n_cand, by = "task_id") %>%
-        mutate(across(c(n_eligible_documents, n_searchable_documents, n_snippets),
-                      ~ coalesce(as.integer(.x), 0L)),
-               coverage_state = case_when(
-                   n_eligible_documents == 0L ~ "no_eligible_document",
-                   n_snippets == 0L           ~ "no_candidate",
-                   TRUE                        ~ "candidate"))
-
-    list(coverage = coverage, candidates = candidates)
+    # Retrieval returns what it retrieved. How many documents a task could have
+    # searched, and whether any snippet survived, are counts over the searchable
+    # documents and the snippets themselves, both already recorded as lineage.
+    list(candidates = candidates)
 }

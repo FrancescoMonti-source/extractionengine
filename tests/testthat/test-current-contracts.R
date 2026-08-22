@@ -149,32 +149,15 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
             source_ELTID = paste0("L", 1:5)))
     expect_false("internal" %in% names(numeric_run$audit))
 
-    # Executor coverage is a total, closed task relation. Missing tasks and new
-    # states must reach an explicit implementation decision instead of being
-    # recoded as an apparently cautious public status.
-    intermediate <- list(
-        coverage = tibble::tibble(
-            task_id = "P1", processing_state = "measured"),
-        lineage = tibble::tibble(
-            task_id = "P1", stage = "selected",
-            artifact_id = "biology:00000001"))
-    missing_task <- intermediate
-    missing_task$coverage <- missing_task$coverage[0, , drop = FALSE]
-    states_for_tasks <- getFromNamespace(
-        ".states_for_tasks", "extractionengine")
+    # A structured activation has no coverage frame at all: its total task
+    # relation is the lineage, so a result that lost it must fail loudly instead
+    # of reporting every task as unavailable.
     expect_error(
-        states_for_tasks(missing_task, "P1"),
-        "exactly one row.*missing: P1")
+        getFromNamespace(".channel_status_rows", "extractionengine")(
+            resolve_variable_spec(numeric_variable), "result",
+            list(candidates = tibble::tibble()), "P1"),
+        "missing its activation lineage")
 
-    unknown_state <- intermediate
-    unknown_state$coverage$processing_state <- "future_state"
-    channel_status_rows <- getFromNamespace(
-        ".channel_status_rows", "extractionengine")
-    expect_error(
-        channel_status_rows(
-            resolve_variable_spec(numeric_variable),
-            "result", unknown_state, "P1"),
-        "unsupported processing_state.*future_state")
 
     expect_error(
         run_variable(
@@ -363,14 +346,17 @@ test_that("relational keys control qualification, evidence, and broadcast", {
     expect_identical(
         hb_low_counts$n[match(names(expected_counts), hb_low_counts$stage)],
         unname(expected_counts))
+    # Lineage buckets stay disjoint and now separate the two rows an activation
+    # filter demoted, which stop at `selector`, from the row that never matched
+    # the selector at all.
     expect_identical(
         event_restricted$audit$lineage |>
             dplyr::filter(channel == "hb_low") |>
             dplyr::count(furthest_stage, name = "n") |>
             dplyr::arrange(furthest_stage),
         tibble::tibble(
-            furthest_stage = c("pre_selector", "used", "window"),
-            n = c(1L, 2L, 3L)))
+            furthest_stage = c("pre_selector", "selector", "used", "window"),
+            n = c(1L, 2L, 2L, 1L)))
     expect_length(
         intersect(
             unique(event_restricted$audit$counts$stage),
@@ -969,4 +955,28 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
                 "text_llm & text_lucene", by = "PATID"),
             output = bin_output(group_by = "PATID")),
         "cannot currently use lucene_llm activation\\(s\\): text_llm")
+
+    # The model-call half is a relation with one row per task. A second attempt
+    # row for the same task would make the published call state depend on which
+    # one happened to be read first.
+    llm_call_states <- getFromNamespace(".llm_call_states", "extractionengine")
+    expect_error(
+        llm_call_states(
+            list(attempts = tibble::tibble(
+                task_id = c("P1", "P1"), attempt_status = "completed",
+                processing_status = "ok", task_validity = "valid")),
+            "P1"),
+        "at most one row per task_id")
+
+    # A pre-retrieved input declares the one fact it cannot observe about
+    # itself, so a declaration that skips a task must fail instead of quietly
+    # reading as ineligible.
+    activation_eligibility <- getFromNamespace(
+        ".activation_eligibility", "extractionengine")
+    expect_error(
+        activation_eligibility(
+            list(declared_eligibility = tibble::tibble(
+                task_id = "P1", eligible = TRUE)),
+            c("P1", "P2")),
+        "must cover every task_id")
 })

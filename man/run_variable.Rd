@@ -66,8 +66,9 @@ contract is revised.
 \code{llm_calls}, and a resolved \code{execution_manifest}. \code{lineage}
 records in \code{furthest_stage} the furthest stage reached by each source row,
 searchable document, or task-local snippet: \code{pre_selector},
-\code{window}, \code{selected}, \code{model_input}, \code{used}, or
-\code{cited}. Counting lineage rows by \code{furthest_stage} yields disjoint
+\code{window}, \code{selector}, \code{selected}, \code{model_input},
+\code{used}, or \code{cited}. An artifact that matched the selector and was then
+demoted by an activation filter stops at \code{selector}. Counting lineage rows by \code{furthest_stage} yields disjoint
 buckets; \code{audit$counts$stage} is cumulative, which is why the two columns
 do not share a name. Later stages imply earlier stages of the same artifact;
 artifacts are not duplicated as an event log.

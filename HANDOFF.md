@@ -2462,3 +2462,185 @@ owner because it asserts what 0.1.0 is.
 **Files changed.** `R/structured.R`, `tests/testthat/test-current-contracts.R`,
 `NEWS.md`, `README.md`, `DESIGN.md`, `man/variable_spec.Rd`,
 `man/operators.Rd`, `vignettes/getting-started.Rmd`, `PLAN.md`, and this entry.
+
+## Phase 4.4 scoping: retiring coverage and observations (2026-08-22)
+
+**Goal.** Replace the two executor frames Phase 4.3 left in place: `coverage`,
+the total task-state relation, and `observations`, which still supplies the
+pre-filter `selector` count. Lazy payload execution stays out of this slice.
+
+**What the code actually says.** All three structured executors compute the same
+two things in the same shape *[verificato: `R/structured.R:485`, `:617`, `:764`]*:
+
+```r
+processing_state = case_when(n_source_rows == 0L ~ "no_eligible_source",
+                             <post-window count> == 0L ~ "no_candidate",
+                             TRUE ~ "measured")
+accepted_value   = if_else(<match count> > 0L, "present", "absent")
+```
+
+and `.deterministic_hits_for_tasks()` then folds those four states and two
+values back into three outcomes. Composing the two collapses the whole chain:
+
+> - no artifact ever reached `pre_selector` for the task -> `NA`;
+> - at least one artifact reached `selected` -> `TRUE`;
+> - otherwise -> `FALSE`.
+
+`no_candidate` and `measured`+`absent` are the same answer arrived at twice, and
+`no_eligible_source` is "zero `pre_selector` rows" spelled as a label. The
+deterministic half of `coverage` is therefore **two counts over lineage**, not a
+vocabulary. `values$normalized_value`/`accepted_value` go with it.
+
+**The LLM half is a join of two relations that both already exist.**
+`final_coverage` *[`R/extract.R:595-607`]* left-joins `attempts` onto retrieval
+coverage and flattens the pair into one `processing_state`. Retrieval facts
+(`no_eligible_document`, `no_candidate`) are lineage counts; call facts
+(`not_called`, `model_error`, `processing_error`, `valid`, `invalid`) are rows of
+`attempts`, already published as `audit$llm_calls`. The slice deletes the join
+and reads the two relations, which is also the honest shape: retrieval and the
+model call are not one state machine.
+
+**`observations` needs one new stage, and it buys more than parity.** A row that
+matched the selector and was then demoted by `filter_rows`/`filter_groups` is
+today indistinguishable in lineage from a row that never matched: both stop at
+`window`. Adding **`selector`** between `window` and `selected` makes the
+pre-filter boundary `reached(selector)`, retiring the last read of
+`observations` *[`R/run_variable.R:1480-1485`]*, and makes *what the filters
+removed* visible per artifact instead of only as a count difference.
+
+**Measured.** On four synthetic shapes over one three-patient source -- no
+window; a window that keeps one row of two; a window that empties every task; a
+`filter_rows` predicate -- the derived rule reproduces both published relations
+exactly. `values$value` and `channel_status$selection_status` agree in all four,
+including the patient with no source rows (`unavailable`, no lineage row at all)
+and the task emptied by its window (`no_match`, `pre_selector` rows only). The
+same runs exhibit the gap this slice must close: under `filter_rows`, the
+demoted row sits at `pre_selector` beside a row that never matched the selector,
+which is exactly what the new `selector` stage separates.
+
+**The one fact lineage cannot hold.** A pre-retrieved text input is a stored
+query result, not an enumerable snapshot: zero snippets can mean "no document
+existed" or "documents existed and none matched", and the engine cannot tell
+them apart. Today the caller declares it in `coverage$coverage_state`
+*[`R/run_variable.R:94-141`]*. It stays declared, as an explicit per-task
+eligibility **input**, never an executor output. This is the same boundary the
+roster already draws by marking those inputs non-enumerable.
+
+**Public surface.** `channel_status$selection_status` keeps its three labels and
+its meaning: `unavailable` becomes "no artifact reached `pre_selector`" (or the
+declared ineligibility, for pre-retrieved text), `matched`/`no_match` stay the
+`selected` count. PLAN Fase 3 required that this column survive until its
+replacement exists; the derived view is that replacement, so this slice does not
+remove it.
+
+**Acceptance criteria.**
+
+1. no executor returns `coverage`, `observations`, or `values$accepted_value`;
+2. the seven differential cases are unchanged -- this slice is behaviour
+   preserving, not a contract change;
+3. `audit$counts` keeps every stage it publishes today, with `selector` now
+   derived from lineage for structured activations with filters;
+4. a task with zero source rows and a task whose window excluded everything stay
+   distinguishable in the published result;
+5. an unsupported executor state can no longer be *converted* to anything: with
+   the vocabulary gone, `.check_processing_states()` and the two default
+   branches of difetto K go with it.
+
+**Sequence.** (a) add the `selector` stage and move the count; (b) derive the
+deterministic three-valued hit from lineage and delete `coverage` from the three
+structured executors; (c) split the LLM state into retrieval + `attempts`; (d)
+turn pre-retrieved eligibility into a declared input. Each step keeps the oracle
+green on its own.
+
+**Files.** `R/lineage.R`, `R/structured.R`, `R/extract.R`, `R/retrieval.R`,
+`R/run_variable.R`, `R/channel-combine.R`, plus the contract sentences in
+`DESIGN.md`, `README.md`, `man/run_variable.Rd`, and `NEWS.md`.
+
+**Open questions for the owner.**
+
+- **Does `no_candidate` deserve to survive as a published fact?** It is
+  currently indistinguishable from "measured and absent" in the value, but a
+  reader may still want to know the window emptied the task. The counts already
+  say it (`window` = 0 with `pre_selector` > 0); the question is whether
+  anything should say it twice.
+- **Estimated size:** roughly 200 lines of hand-maintained bookkeeping removed
+  against maybe 60 added. Not measured -- it is an estimate from the sites above,
+  and the slice should report the real number.
+
+## Phase 4.4 implemented: coverage and observations retired (2026-08-23)
+
+**Boundary.** The executors no longer publish a per-task state relation. Lazy
+payload execution, the last Phase 4 slice, is untouched, and `evidence`,
+`candidates`, and `attempts` keep their contracts: this slice removes
+bookkeeping, not data.
+
+**What moved.**
+
+- **A new lineage stage, `selector`,** between `window` and `selected`. An
+  artifact that matched the channel selector and was then demoted by
+  `filter_rows`/`filter_groups` stops there instead of being left at `window`,
+  where it was indistinguishable from one that never matched. This retired the
+  last read of `observations`; `audit$counts` publishes the same numbers,
+  now read from the relation.
+- **The three structured executors** no longer build `coverage`, `values`, or
+  `observations`, and no longer summarise tasks at all. Membership is the two
+  counts the scoping entry measured: no artifact at `pre_selector` is `NA`, at
+  least one at `selected` is `TRUE`, everything else is `FALSE`.
+- **Text retrieval** returns what it retrieved. `.run_lucene_presence()` returns
+  no state, and the LLM path's `final_coverage` join is gone: the model-call
+  half is read from `attempts` by `.llm_call_states()`, which is the same
+  `case_when()` minus the two retrieval branches it had been fused with.
+  `not_called` now covers "nothing retrieved" and "no documents at all"; both
+  already produced identical public output.
+- **`run_extraction()` takes the declared task frame** instead of coverage.
+  Coverage had a third, undocumented role there: it was also the task row handed
+  to `prompt_builder()`, so the prompt was being built from a state frame rather
+  than from the tasks.
+- **Pre-retrieved text declares its eligibility.** The caller-facing
+  `coverage_state` input is unchanged; the engine reduces it once to a per-task
+  boolean and reads it through `.activation_eligibility()`. It is the only fact
+  in the slice that is authored rather than observed, which is the same boundary
+  the roster draws by marking those inputs non-enumerable.
+
+**One intentional behaviour change.** *[misurato]* against this checkout's `HEAD`
+with a `list(corpus =, docs_index =)` bundle whose index names a document the
+corpus does not contain: that task reported `selection_status = "no_match"`
+before and reports `"unavailable"` now. Eligibility is what the activation could
+actually search, and a document outside the corpus cannot be searched; the old
+label claimed a search that never happened. Published values are identical,
+because the hit-set algebra treats an unobserved channel and an observed absence
+alike. Unreachable when the documents source is a bare tCorpus, whose index is
+derived from the corpus itself.
+
+**Guards traded, not dropped.** `.states_for_tasks()` and
+`.check_processing_states()` went with the vocabulary they policed, and so did
+the two tests that pinned them. Two executable invariants replace them: model
+attempts must hold at most one row per task, and a declared eligibility must
+cover every task. The lineage itself is now the total task relation, so a result
+that lost it fails loudly instead of reporting every task unavailable.
+
+**The open question is answered by construction.** `no_candidate` does not
+survive: with the vocabulary gone there is no longer a place where it could be
+said a second time. `audit$counts` still says it, as `pre_selector` > 0 with
+`window` or `selector` at 0.
+
+**Size.** *[misurato]* 286 lines deleted against 170 added under `R/`, a net
+116 fewer. The scoping estimate was ~200 against ~60: the deletion was larger
+than estimated and the replacement wordier, mostly comments carrying the
+reasoning that used to be implicit in the state names.
+
+**Verification.** All 73 current-contract expectations pass with no warnings.
+The seven Phase 0 differential cases are unchanged from `after-realign.rds`,
+including `text_llm`. A full source build creates both vignettes, and
+`R CMD check --no-manual --no-build-vignettes` finishes with `Status: 1 NOTE`,
+the pre-existing `NEWS.md` heading. No real model call was made.
+
+**Still open in Phase 4.** Lazy payload execution, plus the two end-of-phase
+decisions: lineage growth measured on a real profile, and whether the
+incomplete-roster guard can be relaxed for expressions that cannot qualify an
+invisible unit.
+
+**Files changed.** `R/structured.R`, `R/run_variable.R`, `R/extract.R`,
+`R/channel-combine.R`, `R/retrieval.R`, `R/lineage.R`, `R/globals.R`,
+`tests/testthat/test-current-contracts.R`, `NEWS.md`, `README.md`, `DESIGN.md`,
+`man/run_variable.Rd`, and this entry.

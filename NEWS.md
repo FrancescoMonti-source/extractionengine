@@ -67,6 +67,24 @@ migration.
   relation with one row per activation artifact. **Migration:** query
   `audit$lineage` instead. It carries coordinates, never source payload.
 
+* `channel_status$selection_status` reports `unavailable` for a task whose
+  documents are all outside the searchable corpus. This is reachable only
+  through a caller-supplied `list(corpus =, docs_index =)` bundle whose index
+  names documents the corpus does not contain; such a task used to report
+  `no_match`, which claimed the engine had searched documents it cannot read.
+  Published values are unchanged, because an unobserved channel and an observed
+  absence are both non-members of the hit set. **Migration:** none, unless you
+  read `selection_status` for that mismatched-bundle case.
+
+* `audit$lineage` gains a `selector` stage between `window` and `selected`. An
+  artifact that matched the channel selector and was then demoted by
+  `filter_rows` or `filter_groups` now stops there instead of being left at
+  `window`, where it was indistinguishable from an artifact that never matched.
+  `audit$counts` is unchanged: the `selector` count it publishes is the same
+  number, now read from the lineage rather than from an executor frame.
+  **Migration:** none, unless you counted lineage rows by `furthest_stage` and
+  assumed filtered rows appeared under `window`.
+
 * `audit$lineage` names its stage column `furthest_stage`, not `stage`.
   Counting lineage rows by `furthest_stage` gives disjoint buckets — a row
   that stopped at the pre-selector is counted there and nowhere else — whereas

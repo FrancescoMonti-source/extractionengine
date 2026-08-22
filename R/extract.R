@@ -489,7 +489,36 @@ DEFAULT_LLM_SYSTEM_PROMPT <- paste(
                            "RECTYPE")))
 }
 
-run_extraction <- function(coverage, candidates, definition, chat,
+# The model-call half of a text activation is the attempts relation, not a
+# label: one row per task carrying the transport outcome, the processing
+# outcome, and the validity verdict. A task with no attempt row was never
+# called, which is the same answer whether retrieval returned nothing or the
+# activation never had a document universe -- both are lineage counts upstream.
+.llm_call_states <- function(result, task_ids) {
+    states <- rep("not_called", length(task_ids))
+    attempts <- result$attempts
+    if (!is.data.frame(attempts) || !nrow(attempts)) return(states)
+    attempt_ids <- as.character(attempts$task_id)
+    if (anyDuplicated(attempt_ids)) {
+        stop("Model attempts must hold at most one row per task_id.",
+             call. = FALSE)
+    }
+    index <- match(as.character(task_ids), attempt_ids)
+    found <- !is.na(index)
+    index <- index[found]
+    states[found] <- dplyr::case_when(
+        as.character(attempts$attempt_status[index]) == "error" ~ "model_error",
+        as.character(attempts$processing_status[index]) ==
+            "processing_error" ~ "processing_error",
+        as.character(attempts$task_validity[index]) == "valid" ~ "valid",
+        TRUE ~ "invalid")
+    states
+}
+
+# The model is called for the tasks that actually have candidate snippets, in
+# declared task order. Why a task has none -- no document universe, or none that
+# matched -- is a lineage count upstream, not a state this executor is told.
+run_extraction <- function(tasks, candidates, definition, chat,
                            candidate_selector, query = NA_character_,
                            sample_n = 0L) {
     .check_llm_definition(definition)
@@ -497,7 +526,8 @@ run_extraction <- function(coverage, candidates, definition, chat,
         stop("candidate_selector must be a function.", call. = FALSE)
     }
     metadata <- .chat_metadata(chat)
-    task_ids <- coverage$task_id[coverage$coverage_state == "candidate"]
+    task_ids <- intersect(
+        as.character(tasks$task_id), unique(as.character(candidates$task_id)))
     if (sample_n > 0L) task_ids <- utils::head(task_ids, sample_n)
 
     query_hash <- substr(rlang::hash(query), 1L, 12L)   # audit: retrieval-query fingerprint
@@ -509,7 +539,7 @@ run_extraction <- function(coverage, candidates, definition, chat,
         ts <- .select_task_candidates(candidate_selector, ts, tid)
         ts$model_candidate_rank <- seq_len(nrow(ts))
         selected_l[[length(selected_l) + 1L]] <- ts
-        task_row <- coverage[coverage$task_id == tid, , drop = FALSE]
+        task_row <- tasks[as.character(tasks$task_id) == tid, , drop = FALSE]
         prompt <- definition$prompt_builder(task_row, ts)
         type   <- definition$type_builder(ts$snippet_id)
         call <- .call_chat(chat, prompt, type, definition$system_prompt, metadata)
@@ -592,20 +622,7 @@ run_extraction <- function(coverage, candidates, definition, chat,
         inferred_finish_reason = character(), partial_response = character(),
         raw_response = list())
 
-    final_coverage <- coverage %>%
-        left_join(distinct(attempts, task_id, attempt_status, processing_status, task_validity),
-                  by = "task_id") %>%
-        mutate(processing_state = case_when(
-            coverage_state == "no_eligible_document" ~ "no_eligible_document",
-            coverage_state == "no_candidate"         ~ "no_candidate",
-            is.na(attempt_status)                    ~ "not_called",
-            attempt_status == "error"                ~ "model_error",
-            processing_status == "processing_error"  ~ "processing_error",
-            task_validity == "valid"                 ~ "valid",
-            TRUE                                     ~ "invalid")) %>%
-        select(-attempt_status, -processing_status, -task_validity)
-
-    list(coverage = final_coverage, values = values, evidence = evidence,
+    list(values = values, evidence = evidence,
          attempts = attempts, candidates = candidates,
          model_candidates = model_candidates,
          value_prototype = definition$value_prototype)

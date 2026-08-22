@@ -1,13 +1,15 @@
 # =============================================================================
 # structured.R — deterministic (non-LLM) extraction path for STRUCTURED sources
 # -----------------------------------------------------------------------------
-# Mirrors the text path's four views but: evidence = selected source rows,
-# measurement = a deterministic rule, NO corpus and NO model. NEUTRAL, concept-
-# agnostic executors only: measure_code_presence (code/act membership) and
-# measure_analyte_values (valued rows of an analyte in a window -- the output
-# expression is evaluated later during assembly); the
-# run_variable() dispatch binds each to its source. Coverage census is kept over ALL
-# tasks, same discipline as the text path. Provenance points at the exact source rows.
+# Evidence = selected source rows, measurement = a deterministic rule, NO corpus
+# and NO model. NEUTRAL, concept-agnostic executors only: measure_code_presence
+# (code/act membership) and measure_analyte_values (valued rows of an analyte in
+# a window -- the output expression is evaluated later during assembly); the
+# run_variable() dispatch binds each to its source. These executors no longer
+# summarise tasks into a per-task state: what an activation could look at, what
+# it selected, and what a filter demoted are stages of the activation lineage,
+# and the census over ALL tasks is taken there. Provenance points at the exact
+# source rows.
 # =============================================================================
 
 # --- contract / provenance helpers ------------------------------------------
@@ -373,22 +375,34 @@
     }
 }
 
-.structured_lineage_inputs <- function(pre_selector, scoped, windowed) {
+# A row that matched the selector and was then demoted by an activation filter
+# stops at `selector`; a row that never matched stops at `window`, or at
+# `pre_selector` when the activation declares no window. Keeping those two apart
+# is what retires the observation frame from the audit path: the pre-filter
+# boundary becomes a lineage count, and what the filters removed stays visible
+# per artifact instead of only as the difference between two totals.
+.structured_lineage_inputs <- function(pre_selector, scoped, observations,
+                                       windowed) {
     inputs <- list(
         pre_selector = .lineage_input_rows(pre_selector, "source_row"))
     if (windowed) {
         inputs$window <- .lineage_input_rows(scoped, "source_row")
     }
+    matched_selector <- observations$is_target | observations$row_demoted |
+        observations$group_demoted
+    inputs$selector <- .lineage_input_rows(
+        observations[matched_selector, , drop = FALSE], "source_row")
     inputs
 }
 
 # --- generic code presence: a code family over a coded source ------------------
 # Neutral structured executor behind a run_variable() code channel over a coded
-# source (for example CIM-10 / pmsi$diag or CCAM / pmsi$actes). Per task it marks
-# "present" if any code in the declared family is in scope and "absent" if
-# in-scope rows exist but none matches, with coverage / values / evidence /
-# observation artifacts. The caller resolves the PHYSICAL columns from the
-# source's roles:
+# source (for example CIM-10 / pmsi$diag or CCAM / pmsi$actes). It selects the
+# rows whose code is in the declared family and in scope, and returns them with
+# their evidence and their lineage; whether a task is present, absent, or was
+# never given a universe to search is read from that lineage downstream, not
+# summarised here. The caller resolves the PHYSICAL columns from the source's
+# roles:
 # `code_col` holds the code; `start_col`/`end_col` the time interval (a point-dated
 # source passes one date for both). `match` is exact (a code set) or regex. `field` /
 # `source` name the output rows; `codes` is the declared family (no concept baked in).
@@ -412,8 +426,8 @@ measure_code_presence <- function(source_table, tasks, codes,
     # Grain is declared by the output contract (output$group_by) and passed as grain_keys by
     # the caller (run_variable): "PATID" alone scopes by subject (patient grain);
     # c("PATID","EVTID") scopes each task to its OWN stay (stay grain) -- closing the
-    # DESIGN §7 executor gap ("EVTID is invariant across HDW rows"). source_counts and
-    # the join both use grain_keys, so coverage is per grain unit.
+    # DESIGN §7 executor gap ("EVTID is invariant across HDW rows"). The task
+    # join uses grain_keys, so every artifact is associated per grain unit.
     .validate_structured_inputs(
         tasks, source_table,
         unique(c("source_row_id", "PATID", "EVTID", "ELTID",
@@ -436,9 +450,6 @@ measure_code_presence <- function(source_table, tasks, codes,
 
     pre_selector <- rows %>%
         inner_join(tkeys, by = grain_keys, relationship = "many-to-many")
-    source_counts <- pre_selector %>%
-        group_by(task_id) %>%
-        summarise(n_source_rows = n(), .groups = "drop")
 
     scoped <- pre_selector
     if (windowed) {
@@ -470,33 +481,6 @@ measure_code_presence <- function(source_table, tasks, codes,
                 .data$row_demoted ~ "row predicate not satisfied",
                 TRUE ~ "code outside the declared family"))
 
-    counts <- observations %>%
-        group_by(task_id) %>%
-        summarise(
-            n_scope_rows = n(),
-            n_matching_rows = sum(is_target),
-            .groups = "drop")
-    coverage <- tkeys %>%
-        left_join(source_counts, by = "task_id") %>%
-        left_join(counts, by = "task_id") %>%
-        mutate(
-            across(c(n_source_rows, n_scope_rows, n_matching_rows),
-                   ~ coalesce(as.integer(.x), 0L)),
-            processing_state = case_when(
-                n_source_rows == 0L ~ "no_eligible_source",
-                windowed & n_scope_rows == 0L ~ "no_candidate",
-                TRUE ~ "measured"))
-
-    values <- coverage %>%
-        filter(processing_state == "measured") %>%
-        mutate(normalized_value = if_else(n_matching_rows > 0L, "present", "absent")) %>%
-        transmute(
-            task_id,
-            field = field,
-            normalized_value,
-            accepted_value = normalized_value,
-            n_scope_rows,
-            n_matching_rows)
 
     candidate_columns <- unique(c("task_id", source_columns))
     candidates <- observations %>%
@@ -516,13 +500,10 @@ measure_code_presence <- function(source_table, tasks, codes,
         select(all_of(evidence_columns))
 
     list(
-        coverage = coverage,
-        values = values,
         candidates = candidates,
         evidence = evidence,
-        observations = observations,
         lineage_inputs = .structured_lineage_inputs(
-            pre_selector, scoped, windowed))
+            pre_selector, scoped, observations, windowed))
 }
 
 # --- generic document presence: metadata-selected docs_index rows ---------------
@@ -565,9 +546,6 @@ measure_doc_presence <- function(docs_index, tasks, filters,
 
     pre_selector <- rows %>%
         inner_join(tkeys, by = grain_keys, relationship = "many-to-many")
-    source_counts <- pre_selector %>%
-        group_by(task_id) %>%
-        summarise(n_source_rows = n(), .groups = "drop")
 
     scoped <- pre_selector
     if (windowed) {
@@ -602,33 +580,6 @@ measure_doc_presence <- function(docs_index, tasks, filters,
                 .data$row_demoted ~ "row predicate not satisfied",
                 TRUE ~ "document metadata outside the declared filters"))
 
-    counts <- observations %>%
-        group_by(task_id) %>%
-        summarise(
-            n_scope_rows = n(),
-            n_matching_rows = sum(is_target),
-            .groups = "drop")
-    coverage <- tkeys %>%
-        left_join(source_counts, by = "task_id") %>%
-        left_join(counts, by = "task_id") %>%
-        mutate(
-            across(c(n_source_rows, n_scope_rows, n_matching_rows),
-                   ~ coalesce(as.integer(.x), 0L)),
-            processing_state = case_when(
-                n_source_rows == 0L ~ "no_eligible_source",
-                windowed & n_scope_rows == 0L ~ "no_candidate",
-                TRUE ~ "measured"))
-
-    values <- coverage %>%
-        filter(processing_state == "measured") %>%
-        mutate(normalized_value = if_else(n_matching_rows > 0L, "present", "absent")) %>%
-        transmute(
-            task_id,
-            field = field,
-            normalized_value,
-            accepted_value = normalized_value,
-            n_scope_rows,
-            n_matching_rows)
 
     filter_txt <- paste(vapply(names(filters), function(cl) {
         sprintf("%s in {%s}", cl, paste(filters[[cl]], collapse = ","))
@@ -653,13 +604,10 @@ measure_doc_presence <- function(docs_index, tasks, filters,
         select(all_of(evidence_columns))
 
     list(
-        coverage = coverage,
-        values = values,
         candidates = candidates,
         evidence = evidence,
-        observations = observations,
         lineage_inputs = .structured_lineage_inputs(
-            pre_selector, scoped, windowed))
+            pre_selector, scoped, observations, windowed))
 }
 
 # --- generic analyte candidates: selected prepared rows in a point-window -------
@@ -715,9 +663,6 @@ measure_analyte_values <- function(source_table, tasks, analytes,
 
     pre_selector <- biol %>%
         inner_join(tkeys, by = grain_keys, relationship = "many-to-many")
-    source_counts <- pre_selector %>%
-        group_by(task_id) %>%
-        summarise(n_source_rows = n(), .groups = "drop")
 
     scoped <- pre_selector
     if (windowed) {
@@ -748,37 +693,6 @@ measure_analyte_values <- function(source_table, tasks, analytes,
                 analyte_match ~ "analyte match demoted by activation rules",
                 TRUE ~ "analyte outside the declared concept"))
 
-    counts <- observations %>%
-        group_by(task_id) %>%
-        summarise(
-            n_scope_rows = n(),
-            n_candidate_rows = sum(is_target),
-            .groups = "drop")
-
-    coverage <- tkeys %>%
-        left_join(source_counts, by = "task_id") %>%
-        left_join(counts, by = "task_id") %>%
-        mutate(
-            across(c(n_source_rows, n_scope_rows, n_candidate_rows),
-                   ~ coalesce(as.integer(.x), 0L)),
-            processing_state = case_when(
-                n_source_rows == 0L ~ "no_eligible_source",
-                n_candidate_rows == 0L ~ "no_candidate",
-                TRUE ~ "measured"))
-
-    # Membership face (bin_output / combine): a task is present iff at least one
-    # analyte row survives the activation filters.
-    values <- coverage %>%
-        filter(processing_state == "measured") %>%
-        mutate(normalized_value = if_else(n_candidate_rows > 0L,
-                                          "present", "absent")) %>%
-        transmute(
-            task_id,
-            field = field,
-            normalized_value,
-            accepted_value = normalized_value,
-            n_scope_rows,
-            n_candidate_rows)
 
     # Candidates are task identity + the complete prepared source row. Reducers and
     # projections consume real column names rather than a hidden `value` alias.
@@ -801,11 +715,8 @@ measure_analyte_values <- function(source_table, tasks, analytes,
         select(all_of(evidence_columns))
 
     list(
-        coverage = coverage,
-        values = values,
         candidates = candidates,
         evidence = evidence,
-        observations = observations,
         lineage_inputs = .structured_lineage_inputs(
-            pre_selector, scoped, windowed))
+            pre_selector, scoped, observations, windowed))
 }

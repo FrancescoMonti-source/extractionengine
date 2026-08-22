@@ -258,8 +258,11 @@ two values are equal.
 
 `audit$lineage` is the common coordinate-only activation relation. One row
 places one `source_row`, searchable `document`, or task-local `snippet` at the
-`furthest_stage` it reached: `pre_selector`, `window`, `selected`,
-`model_input`, `used`, or `cited`. The column is not called `stage` because
+`furthest_stage` it reached: `pre_selector`, `window`, `selector`, `selected`,
+`model_input`, `used`, or `cited`. An artifact demoted by `filter_rows` or
+`filter_groups` stops at `selector`, so what an activation filter removed stays
+visible per artifact instead of only as a difference between two totals. The
+column is not called `stage` because
 `audit$counts$stage` is cumulative while `furthest_stage` partitions: counting
 lineage rows by it gives disjoint buckets that sum to the artifact total. Later
 stages imply earlier stages of the same artifact; an artifact is not duplicated
@@ -270,7 +273,12 @@ against the caller-owned source snapshot and `artifact_position` records snippet
 order.
 This relation is authoritative for operational selection, terminal
 selection/model-input counts, upstream eligibility/window counts, and fine-grain
-combine placement. It deliberately does not copy prepared-source payload.
+combine placement. It also answers whether an activation had a universe to
+search at all: a task with no `pre_selector` artifact was never looked at, so
+membership publishes `NA` for it rather than an observed `FALSE`. No executor
+publishes a per-task state frame; the model call is a separate relation, not a
+second reading of the same one. It deliberately does not copy prepared-source
+payload.
 Pre-retrieved text inputs have no enumerable document universe, so they cannot
 publish document-level upstream lineage and begin at their stored snippets.
 

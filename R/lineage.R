@@ -8,7 +8,8 @@
 # relation instead of reconstructing the same facts independently.
 
 .lineage_stage_order <- c(
-    "pre_selector", "window", "selected", "model_input", "used", "cited")
+    "pre_selector", "window", "selector", "selected", "model_input", "used",
+    "cited")
 .lineage_selected_stages <- c("selected", "model_input", "used", "cited")
 .lineage_model_input_stages <- c("model_input", "cited")
 .lineage_contributing_stages <- c("used", "cited")
@@ -137,7 +138,8 @@
         (length(lineage_inputs) > 0L && is.null(names(lineage_inputs)))) {
         stop("Channel lineage inputs must be a named list.", call. = FALSE)
     }
-    unknown_stages <- setdiff(names(lineage_inputs), c("pre_selector", "window"))
+    unknown_stages <- setdiff(
+        names(lineage_inputs), c("pre_selector", "window", "selector"))
     if (length(unknown_stages)) {
         stop("Unsupported upstream lineage stage(s): ",
              paste(unknown_stages, collapse = ", "), ".", call. = FALSE)
@@ -223,6 +225,28 @@
         seq.int(target_rank, length(.lineage_stage_order))]
     .lineage_stage_counts(
         result, task_ids, reached, artifact_type = artifact_type)
+}
+
+# Did the activation have a universe to search for this task? `pre_selector`
+# holds every artifact the task could have drawn from, so zero rows there means
+# the engine never looked, which is a different answer from looking and finding
+# nothing. Membership publishes the first as NA and the second as FALSE.
+.lineage_task_eligibility <- function(result, task_ids) {
+    .lineage_reached_counts(result, task_ids, "pre_selector", NULL) > 0L
+}
+
+# Eligibility is observed wherever the source can be enumerated. A pre-retrieved
+# text input cannot be: it is a stored query result, so its caller declares the
+# same fact and the engine reads it here instead of inferring it from silence.
+.activation_eligibility <- function(result, task_ids) {
+    declared <- result$declared_eligibility
+    if (is.null(declared)) return(.lineage_task_eligibility(result, task_ids))
+    index <- match(as.character(task_ids), as.character(declared$task_id))
+    if (anyNA(index)) {
+        stop("Declared text eligibility must cover every task_id.",
+             call. = FALSE)
+    }
+    as.logical(declared$eligible[index])
 }
 
 .build_audit_lineage <- function(channel_results) {
