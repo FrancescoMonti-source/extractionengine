@@ -1940,3 +1940,35 @@ this handoff entry. The generated `.rds` snapshots remain ignored under
 **Open.** Promotion to a permanent test or CI remains deferred until the rewrite
 shows that this exact envelope still protects a useful contract. No engine
 runtime or public API changed in Phase 0.
+
+## Phase 1.1 task assembly (2026-08-22)
+
+**Goal and invariant.** Remove the per-task rescans and one-row tibble
+allocations from result assembly without changing observable behavior. Executor
+`coverage` and `values` must contain at most one row per `task_id`; duplicate
+rows now fail instead of being reduced by silently taking the first match.
+
+**Change and reasoning.** `.reduce_channel_result()` now returns one ordered
+`task_id`/`status`/`hit` table. Evidence was removed from that reducer because no
+consumer read it; public evidence continues to come directly from the executor
+result. Membership values and public channel statuses are assembled as complete
+vectors. Deterministic `from_channel()` payload is partitioned once with task
+IDs as declared factor levels, so zero-row tasks remain present; the authored
+value expression is still evaluated exactly once per task. The gated payload
+path uses the same partition, and LLM assembly indexes its one-row-per-task
+views once rather than rescanning them.
+
+**Verification.** The Phase 0 oracle is unchanged across structured empty-task,
+same-source `ELTID` combine, fake-LLM text, and document-date cases. The three
+current-contract sentinels pass. Direct probes confirm that duplicate coverage
+and duplicate values both fail on the new invariant. On R 4.5.2, the same
+500-task/2,500-payload-row numeric `from_channel()` run fell from 2.280 s to
+0.500 s (4.6x) in one before/after measurement; returned size remained 3.321 MB.
+The timing is evidence that the intended cost was removed, not a performance
+contract. `R CMD build` passes. `R CMD check --no-manual
+--no-build-vignettes` validates installation, code, documentation, and tests;
+its only two warnings are the expected missing built-vignette outputs caused by
+that option, while both vignette source files execute successfully.
+
+**Files changed.** `R/channel-combine.R`, `R/run_variable.R`, and this entry. No
+executor, authoring API, public schema, or clinical rule changed.

@@ -795,49 +795,39 @@
 # overlapping recodings of one executor state. Selection describes whether the
 # activation produced rows after selector + activation filters. Processing is the
 # optional post-selection step; today that is structured LLM extraction only.
-.task_candidate_count <- function(result, task_id) {
+.candidate_counts_for_tasks <- function(result, task_ids) {
     candidates <- result$candidates
     if (!is.data.frame(candidates) || !"task_id" %in% names(candidates)) {
-        return(0L)
+        return(integer(length(task_ids)))
     }
-    sum(as.character(candidates$task_id) == as.character(task_id))
+    tabulate(
+        match(as.character(candidates$task_id), as.character(task_ids)),
+        nbins = length(task_ids))
 }
 
-.selection_status_for_task <- function(result, task_id) {
-    state <- .state_for_task(result, task_id)
-    if (state %in% c("no_eligible_source", "no_eligible_document")) {
-        return("unavailable")
-    }
-    if (.task_candidate_count(result, task_id) > 0L) "matched" else "no_match"
-}
-
-.processing_status_for_task <- function(variable, channel_name, result, task_id) {
-    channel <- .channel_def(variable, channel_name)
-    if (!identical(channel$type, "text") ||
-        !identical(channel$method, "lucene_llm")) {
-        return("not_required")
-    }
-    switch(
-        .state_for_task(result, task_id),
-        valid = "completed",
-        invalid = "invalid",
-        model_error = ,
-        processing_error = "failed",
-        no_candidate = ,
-        no_eligible_source = ,
-        no_eligible_document = ,
-        not_called = "not_called",
-        "not_called")
-}
-
-.channel_status_row <- function(variable, channel_name, result, task_id) {
+.channel_status_rows <- function(variable, channel_name, result, task_ids) {
+    task_ids <- as.character(task_ids)
     variable_name <- variable$name
     source_name <- .source_name_for_channel(channel_name, variable)
-    selection_status <- .selection_status_for_task(result, task_id)
-    processing_status <- .processing_status_for_task(
-        variable, channel_name, result, task_id)
+    states <- .states_for_tasks(result, task_ids)
+    candidate_counts <- .candidate_counts_for_tasks(result, task_ids)
+    selection_status <- ifelse(candidate_counts > 0L, "matched", "no_match")
+    selection_status[states %in%
+        c("no_eligible_source", "no_eligible_document")] <- "unavailable"
+
+    channel <- .channel_def(variable, channel_name)
+    processing_status <- rep("not_required", length(task_ids))
+    if (identical(channel$type, "text") &&
+        identical(channel$method, "lucene_llm")) {
+        processing_status[] <- "not_called"
+        processing_status[states %in% "valid"] <- "completed"
+        processing_status[states %in% "invalid"] <- "invalid"
+        processing_status[states %in%
+            c("model_error", "processing_error")] <- "failed"
+    }
+
     tibble::tibble(
-        task_id = as.character(task_id),
+        task_id = task_ids,
         variable = variable_name,
         channel = channel_name,
         source = source_name,
@@ -860,31 +850,23 @@
 .single_membership_variable <- function(variable, tasks, channel_name, result) {
     var_name <- variable$name
     source_name <- .source_name_for_channel(channel_name, variable)
-    is_text <- identical(.channel_type(channel_name, variable), "text")
-    id_col <- if (is_text) "hit_ref" else "source_row_id"
     no_candidate <- .no_candidate_status(channel_name, variable)
     task_ids <- as.character(tasks$task_id)
-    reduced <- .reduce_channel_result(result, task_ids, id_col, no_candidate)
+    reduced <- .reduce_channel_result(result, task_ids, no_candidate)
+    coverage <- rep("partial", length(task_ids))
+    coverage[reduced$status == "complete"] <- "complete"
+    coverage[reduced$status == "error"] <- "failed"
 
-    values_l <- list(); status_l <- list()
-    for (tid in task_ids) {
-        r <- reduced[[tid]]
-        observed <- isTRUE(r$hit)               # NA / FALSE -> non-member (0)
-        coverage <- switch(r$status,
-            complete = "complete",
-            error    = "failed",
-            "partial")                          # unavailable / invalid
+    list(
+        values = tibble::tibble(
+            task_id = task_ids,
+            variable = var_name,
+            value = as.integer(reduced$hit %in% TRUE),
+            channel_coverage = coverage),
+        channel_status = .channel_status_rows(
+            variable, channel_name, result, task_ids),
         # A retained qualitative qualifier may document a negative membership;
         # evidence is therefore not restricted to positive hits.
-        values_l[[length(values_l) + 1L]] <- tibble::tibble(
-            task_id = tid, variable = var_name,
-            value = as.integer(observed), channel_coverage = coverage)
-        status_l[[length(status_l) + 1L]] <- .channel_status_row(
-            variable, channel_name, result, tid)
-    }
-    list(
-        values = bind_rows(values_l),
-        channel_status = bind_rows(status_l),
         evidence = .public_evidence(
             result, var_name, channel_name, source_name, task_ids,
             .evidence_kind_for_channel(variable, channel_name)))
@@ -925,6 +907,18 @@
     payload
 }
 
+.payload_rows_by_task <- function(payload, task_ids) {
+    split(
+        payload,
+        factor(as.character(payload$task_id), levels = as.character(task_ids)),
+        drop = FALSE)
+}
+
+.bind_scalar_values <- function(values) {
+    if (!length(values)) return(logical())
+    bind_rows(lapply(values, function(value) list(value = value)))$value
+}
+
 .eval_from_channel_value <- function(rows, output, variable_name, channel_name) {
     mask_columns <- setdiff(names(rows), "task_id")
     # Do not evaluate author code for an absent task. A logical NA is the only
@@ -950,17 +944,12 @@
     value
 }
 
-.state_for_task <- function(result, task_id) {
-    state <- result$coverage$processing_state[
-        as.character(result$coverage$task_id) == task_id]
-    if (length(state)) as.character(state[[1]]) else "no_eligible_source"
-}
-
-.status_from_processing_state <- function(state) {
-    if (state %in% c("measured", "valid", "processed")) return("complete")
-    if (state %in% c("invalid")) return("invalid")
-    if (state %in% c("model_error", "processing_error")) return("error")
-    "unavailable"
+.statuses_from_processing_states <- function(states) {
+    status <- rep("unavailable", length(states))
+    status[states %in% c("measured", "valid", "processed")] <- "complete"
+    status[states %in% "invalid"] <- "invalid"
+    status[states %in% c("model_error", "processing_error")] <- "error"
+    status
 }
 
 .hit_for_task <- function(result, task_id) {
@@ -1022,28 +1011,29 @@
         channel_name, "from_channel() value")
     source_name <- .source_name_for_channel(channel_name, variable)
     task_ids <- as.character(tasks$task_id)
-    rows <- lapply(task_ids, function(task_id) {
-        task_rows <- payload[payload$task_id == task_id, , drop = FALSE]
-        n_values <- nrow(task_rows)
-        value <- .eval_from_channel_value(
-            task_rows, output, variable$name, channel_name)
-        state <- .state_for_task(result, task_id)
-        status <- .status_from_processing_state(state)
-        tibble::tibble(
-            task_id = task_id, variable = variable$name, value = value,
-            channel_coverage = if (status == "error") "failed" else
-                if (status == "complete") "complete" else "partial",
-            n_payload_rows = as.integer(n_values))
-    })
-    values <- bind_rows(rows)
-    status <- lapply(task_ids, function(task_id) {
-        row <- .channel_status_row(variable, channel_name, result, task_id)
-        row$n_payload_rows <- as.integer(sum(payload$task_id == task_id))
-        row
-    })
+    payload_rows <- .payload_rows_by_task(payload, task_ids)
+    n_payload_rows <- vapply(payload_rows, nrow, integer(1))
+    value_rows <- lapply(payload_rows, .eval_from_channel_value,
+        output = output,
+        variable_name = variable$name,
+        channel_name = channel_name)
+    processing <- .statuses_from_processing_states(
+        .states_for_tasks(result, task_ids))
+    channel_coverage <- rep("partial", length(task_ids))
+    channel_coverage[processing == "complete"] <- "complete"
+    channel_coverage[processing == "error"] <- "failed"
+
+    values <- tibble::tibble(
+        task_id = task_ids,
+        variable = variable$name,
+        value = .bind_scalar_values(value_rows),
+        channel_coverage = channel_coverage,
+        n_payload_rows = n_payload_rows)
+    status <- .channel_status_rows(variable, channel_name, result, task_ids)
+    status$n_payload_rows <- n_payload_rows
     list(
         values = values,
-        channel_status = bind_rows(status),
+        channel_status = status,
         evidence = .public_evidence(
             result, variable$name, channel_name, source_name, task_ids,
             .evidence_kind_for_channel(variable, channel_name)))
@@ -1134,20 +1124,21 @@
         !is_payload_evidence | evidence_keys %in% payload_keys,
         , drop = FALSE]
 
+    gate_task_ids <- as.character(gate$task_id)
+    payload_rows <- .payload_rows_by_task(payload, gate_task_ids)
+    payload_status <- .statuses_from_processing_states(
+        .states_for_tasks(result, gate_task_ids))
     value_rows <- vector("list", nrow(gate))
     n_payload <- integer(nrow(gate))
     for (i in seq_len(nrow(gate))) {
-        task_id <- as.character(gate$task_id[[i]])
-        task_rows <- payload[payload$task_id == task_id, , drop = FALSE]
+        task_rows <- payload_rows[[i]]
         if (identical(gate$value[[i]], 1L)) {
             n_payload[[i]] <- nrow(task_rows)
             value_rows[[i]] <- .eval_from_channel_value(
                 task_rows, output, variable$name, channel_name)
-            payload_status <- .status_from_processing_state(
-                .state_for_task(result, task_id))
-            if (payload_status == "error") {
+            if (payload_status[[i]] == "error") {
                 gate$channel_coverage[[i]] <- "failed"
-            } else if (payload_status != "complete" &&
+            } else if (payload_status[[i]] != "complete" &&
                        gate$channel_coverage[[i]] != "failed") {
                 gate$channel_coverage[[i]] <- "partial"
             }
@@ -1155,8 +1146,7 @@
             value_rows[[i]] <- NA
         }
     }
-    gate$value <- bind_rows(lapply(
-        value_rows, function(value) tibble::tibble(value = value)))$value
+    gate$value <- .bind_scalar_values(value_rows)
     gate$n_payload_rows <- n_payload
     out$values <- gate
     out
@@ -1176,10 +1166,19 @@
     }
     task_ids <- as.character(tasks$task_id)
     authored <- names(prototype)
-    value_rows <- lapply(task_ids, function(task_id) {
-        state <- .state_for_task(result, task_id)
-        selected <- result$values[
-            as.character(result$values$task_id) == task_id, , drop = FALSE]
+    states <- .states_for_tasks(result, task_ids)
+    value_index <- .task_row_index(
+        result$values, task_ids, character(), "Channel values",
+        allow_columnless_empty = TRUE)
+    value_rows <- lapply(seq_along(task_ids), function(i) {
+        task_id <- task_ids[[i]]
+        state <- states[[i]]
+        index <- value_index[[i]]
+        selected <- if (is.na(index)) {
+            result$values[0, , drop = FALSE]
+        } else {
+            result$values[index, , drop = FALSE]
+        }
         valid <- identical(state, "valid") && nrow(selected) == 1L
         response <- if (valid) selected[authored] else .typed_na_frame(prototype)
         citation_warning <- valid && isTRUE(selected$citation_warning[[1]])
@@ -1199,9 +1198,7 @@
     })
     values <- bind_rows(value_rows)
     source_name <- .source_name_for_channel(channel_name, variable)
-    status <- bind_rows(lapply(task_ids, function(task_id) {
-        .channel_status_row(variable, channel_name, result, task_id)
-    }))
+    status <- .channel_status_rows(variable, channel_name, result, task_ids)
     list(
         values = values,
         channel_status = status,
@@ -1302,21 +1299,16 @@
     task_ids <- as.character(tasks$task_id)
 
     reduced <- lapply(declared, function(ch) {
-        is_text <- identical(.channel_type(ch, variable), "text")
-        id_col <- if (is_text) "hit_ref" else "source_row_id"
         no_candidate <- .no_candidate_status(ch, variable)
-        .reduce_channel_result(channel_results[[ch]], task_ids, id_col, no_candidate)
+        .reduce_channel_result(channel_results[[ch]], task_ids, no_candidate)
     })
     names(reduced) <- declared
 
     # Audit truth: one three-valued hit vector per channel (TRUE/FALSE/NA), kept for
     # membership/overlap. Decision input: the OBSERVED hit set (hit == TRUE), so the
     # set algebra is two-valued and the decision is always determined.
-    hit_vec <- function(ch) vapply(task_ids, function(tid) {
-        h <- reduced[[ch]][[tid]]$hit
-        if (length(h)) h[[1]] else NA
-    }, logical(1))
-    audit_vectors <- stats::setNames(lapply(declared, hit_vec), declared)
+    audit_vectors <- stats::setNames(
+        lapply(declared, function(ch) reduced[[ch]]$hit), declared)
     vectors <- audit_vectors[referenced]
     observed <- stats::setNames(lapply(vectors, function(v) v %in% TRUE), referenced)
 
@@ -1389,32 +1381,29 @@
 
     # channel_coverage: were the selected channels actually evaluable for this task?
     # failed (a channel errored) > partial (a channel unavailable/unusable) > complete.
-    coverage_of <- function(tid) {
-        sts <- vapply(referenced, function(ch) reduced[[ch]][[tid]]$status,
-                      character(1))
-        if (any(sts == "error")) "failed"
-        else if (any(sts %in% c("unavailable", "invalid"))) "partial"
-        else "complete"
-    }
-    channel_coverage <- unname(vapply(task_ids, coverage_of, character(1)))
+    status_matrix <- do.call(cbind, lapply(
+        referenced, function(ch) reduced[[ch]]$status))
+    channel_coverage <- rep("complete", length(task_ids))
+    partial <- rowSums(
+        status_matrix == "unavailable" | status_matrix == "invalid") > 0L
+    failed <- rowSums(status_matrix == "error") > 0L
+    channel_coverage[partial] <- "partial"
+    channel_coverage[failed] <- "failed"
 
     values <- tibble::tibble(
         task_id = task_ids, variable = var_name,
         value = as.integer(result), channel_coverage = channel_coverage)
 
-    status_l <- list(); evidence_l <- list()
-    for (ch in declared) {
+    channel_status <- bind_rows(lapply(declared, function(ch) {
+        .channel_status_rows(variable, ch, channel_results[[ch]], task_ids)
+    }))
+    evidence_l <- stats::setNames(lapply(declared, function(ch) {
         src <- .source_name_for_channel(ch, variable)
-        for (tid in task_ids) {
-            status_l[[length(status_l) + 1L]] <- .channel_status_row(
-                variable, ch, channel_results[[ch]], tid)
-        }
-        evidence_l[[ch]] <- .public_evidence(
+        .public_evidence(
             channel_results[[ch]], var_name, ch, src,
             task_ids[audit_vectors[[ch]] %in% TRUE],
             .evidence_kind_for_channel(variable, ch))
-    }
-    channel_status <- bind_rows(status_l)
+    }), declared)
 
     wide <- tibble::tibble(task_id = task_ids)
     for (ch in referenced) wide[[ch]] <- vectors[[ch]]

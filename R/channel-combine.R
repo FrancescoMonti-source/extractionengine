@@ -1,13 +1,13 @@
 # =============================================================================
-# channel-combine.R — per-channel reduction to the {status, hit, evidence} contract
+# channel-combine.R — per-channel reduction to the {status, hit} contract
 # -----------------------------------------------------------------------------
-# Reduces ONE selected channel's engine views (coverage / values / evidence) to a
-# per-task {status, hit, evidence} triple consumed by the value assemblers in
-# run_variable() -- the hit-set-expression evaluator (.hit_set_expr_variable) and the
-# single-channel membership assembler (.single_membership_variable). It maps the
-# engine's processing_state vocabulary (text OR structured) into a normalized
-# {complete / unavailable / invalid / error} status plus a three-valued hit
-# (TRUE / FALSE / NA).
+# Reduces ONE selected channel's coverage/value views to per-task status and hit
+# vectors consumed by the value assemblers in run_variable() -- the hit-set
+# expression evaluator (.hit_set_expr_variable) and the single-channel membership
+# assembler (.single_membership_variable). Evidence is published separately from
+# the executor result. The reducer maps the engine's processing_state vocabulary
+# (text OR structured) into a normalized {complete / unavailable / invalid / error}
+# status plus a three-valued hit (TRUE / FALSE / NA).
 #
 # "source" is reserved for the warehouse/raw data source (e.g. pmsi_diag, documents,
 # biology); a channel reads FROM a source but is not the source. The only raw-source
@@ -22,61 +22,75 @@
 # test-slice-diabetes-spec.R / test-slice-dialysis-spec.R.)
 # =============================================================================
 
-# Map an engine processing_state (text OR structured vocabulary) + the channel's
-# accepted value into the {status, hit} the assemblers expect. These mappings are
-# RECIPE decisions, surfaced deliberately rather than hidden:
-#   - no_candidate                          -> caller-selected complete/unavailable
-#   - no data for the subject at all        -> UNAVAILABLE (neither + nor -; partial)
-#   - rows present but unusable             -> INVALID (not a negative)
-#   - model/processing failure              -> ERROR
-.channel_status_from_state <- function(
-    processing_state,
-    accepted_value,
-    no_candidate_status = c("complete", "unavailable")) {
-    no_candidate_status <- match.arg(no_candidate_status)
-    hit_present <- identical(as.character(accepted_value), "present")
-    switch(processing_state,
-        measured             = list(status = "complete",    hit = hit_present),
-        valid                = list(status = "complete",    hit = hit_present),
-        no_candidate         = list(
-            status = no_candidate_status,
-            hit = if (identical(no_candidate_status, "complete")) FALSE else NA),
-        invalid              = list(status = "invalid",     hit = NA),
-        no_eligible_source   = list(status = "unavailable", hit = NA),
-        no_eligible_document = list(status = "unavailable", hit = NA),
-        not_called           = list(status = "unavailable", hit = NA),
-        model_error          = list(status = "error",       hit = NA),
-        processing_error     = list(status = "error",       hit = NA),
-        list(status = "unavailable", hit = NA))
+# Return the position of each declared task in a task-keyed executor view. The
+# assemblers have always assumed at most one coverage/value row per task; make
+# that invariant executable instead of silently taking the first match.
+.task_row_index <- function(frame, task_ids, required, frame_name,
+                            allow_columnless_empty = FALSE) {
+    if (!is.data.frame(frame)) {
+        stop(frame_name, " must be a data frame.", call. = FALSE)
+    }
+    if (!nrow(frame) && allow_columnless_empty) {
+        return(rep.int(NA_integer_, length(task_ids)))
+    }
+    missing <- setdiff(c("task_id", required), names(frame))
+    if (length(missing)) {
+        stop(frame_name, " is missing required column(s): ",
+             paste(missing, collapse = ", "), ".", call. = FALSE)
+    }
+    frame_ids <- as.character(frame$task_id)
+    if (anyDuplicated(frame_ids)) {
+        stop(frame_name, " must have at most one row per task_id.",
+             call. = FALSE)
+    }
+    match(as.character(task_ids), frame_ids)
 }
 
-# Reduce one channel's full result (the engine's coverage/values/evidence views) to
-# a per-task {status, hit, evidence} list keyed by task_id. `id_col` is the durable
-# row key in that channel's evidence: source_row_id (structured) or hit_ref (text).
+.states_for_tasks <- function(result, task_ids) {
+    index <- .task_row_index(
+        result$coverage, task_ids, "processing_state", "Channel coverage")
+    states <- rep("no_eligible_source", length(task_ids))
+    found <- !is.na(index)
+    states[found] <- as.character(result$coverage$processing_state[index[found]])
+    states
+}
+
+.accepted_values_for_tasks <- function(result, task_ids) {
+    index <- .task_row_index(
+        result$values, task_ids, "accepted_value", "Channel values",
+        allow_columnless_empty = TRUE)
+    accepted <- rep(NA_character_, length(task_ids))
+    found <- !is.na(index)
+    accepted[found] <- as.character(result$values$accepted_value[index[found]])
+    accepted
+}
+
+# Reduce one channel's coverage/value views to one ordered {task_id, status, hit}
+# table. Evidence is published directly from the executor result and does not
+# belong in this decision reducer.
 .reduce_channel_result <- function(
     res,
     task_ids,
-    id_col,
     no_candidate_status = c("complete", "unavailable")) {
     no_candidate_status <- match.arg(no_candidate_status)
-    cov <- res$coverage; val <- res$values; ev <- res$evidence
-    # run_extraction returns COLUMN-LESS empty tibbles when no task produced a value
-    # (e.g. every task no_candidate); guard so $task_id access on such a tibble does
-    # not warn ("Unknown or uninitialised column"). Behaviour is unchanged.
-    has_val <- nrow(val) > 0L && all(c("task_id", "accepted_value") %in% names(val))
-    has_ev  <- nrow(ev) > 0L && "task_id" %in% names(ev)
-    out <- vector("list", length(task_ids)); names(out) <- task_ids
-    for (tid in task_ids) {
-        state <- cov$processing_state[cov$task_id == tid]
-        state <- if (length(state)) state[[1]] else "no_eligible_source"
-        av <- if (has_val) val$accepted_value[val$task_id == tid] else character()
-        av <- if (length(av)) av[[1]] else NA_character_
-        sh <- .channel_status_from_state(
-            state, av, no_candidate_status = no_candidate_status)
-        tev <- if (has_ev) ev[ev$task_id == tid, , drop = FALSE] else ev[0, ]
-        ids <- if (id_col %in% names(tev)) as.character(tev[[id_col]]) else character()
-        out[[tid]] <- list(status = sh$status, hit = sh$hit,
-                           evidence = tibble::tibble(source_row_id = unique(ids)))
+    states <- .states_for_tasks(res, task_ids)
+    accepted <- .accepted_values_for_tasks(res, task_ids)
+
+    status <- rep("unavailable", length(task_ids))
+    status[states %in% c("measured", "valid")] <- "complete"
+    status[states %in% "no_candidate"] <- no_candidate_status
+    status[states %in% "invalid"] <- "invalid"
+    status[states %in% c("model_error", "processing_error")] <- "error"
+
+    hit <- rep(NA, length(task_ids))
+    complete <- states %in% c("measured", "valid")
+    hit[complete] <- !is.na(accepted[complete]) & accepted[complete] == "present"
+    if (identical(no_candidate_status, "complete")) {
+        hit[states %in% "no_candidate"] <- FALSE
     }
-    out
+
+    tibble::tibble(
+        task_id = as.character(task_ids),
+        status = status,
+        hit = hit)
 }
