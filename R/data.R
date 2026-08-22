@@ -147,18 +147,25 @@ validate_source_view <- function(data, spec) {
 # Preparation is per COHORT, not per variable: every variable of a protocol
 # derives its task universe from the same declared subject list, so the PATID
 # restriction and the source normalization below produce the same frames for all
-# of them. run_protocol() therefore prepares once and marks the result; a marked
-# bundle passes straight through, so a protocol pays normalization once instead
-# of once per variable.
+# of them. run_protocol() therefore prepares once and marks the result with the
+# PATID set it was prepared for, so a protocol pays normalization once instead
+# of once per variable without silently reusing a different cohort's subset.
 .prepare_execution_sources <- function(sources, cohort) {
     if (is.null(sources)) return(sources)
-    if (isTRUE(attr(sources, "ee_prepared"))) return(sources)
+    cohort_patids <- unique(as.character(cohort$PATID))
+    cohort_patids <- sort(cohort_patids[
+        !is.na(cohort_patids) & nzchar(cohort_patids)])
+    if (isTRUE(attr(sources, "ee_prepared"))) {
+        if (!identical(attr(sources, "ee_prepared_patids"), cohort_patids)) {
+            stop("Prepared sources belong to a different PATID cohort; ",
+                 "pass the original unprepared sources.", call. = FALSE)
+        }
+        return(sources)
+    }
     if (!is.list(sources) || is.null(names(sources))) {
         stop("sources must be a named list.", call. = FALSE)
     }
 
-    cohort_patids <- unique(as.character(cohort$PATID))
-    cohort_patids <- cohort_patids[!is.na(cohort_patids) & nzchar(cohort_patids)]
     prepared_sources <- intersect(names(sources), names(EE_SOURCES))
     for (source in prepared_sources) {
         data <- sources[[source]]
@@ -185,6 +192,7 @@ validate_source_view <- function(data, spec) {
         }
         sources[[source]] <- data
     }
+    attr(sources, "ee_prepared_patids") <- cohort_patids
     attr(sources, "ee_prepared") <- TRUE
     sources
 }

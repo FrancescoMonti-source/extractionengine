@@ -2068,3 +2068,27 @@ both vignette source files execute successfully.
 **Files changed.** `NAMESPACE`, `man/source_spec.Rd`, and this entry. No source
 contract, prepared data, or execution result changed. The public API
 intentionally shrank by these four unusable entries.
+
+## Phase 1.8 cohort-keyed source preparation (2026-08-22)
+
+**Decision.** A prepared source bundle may be reused only for the same set of
+valid PATIDs. Order, duplicate PATIDs, and finer cohort columns do not affect
+source preparation, so the canonical cache key is the sorted unique PATID set.
+
+**Why mismatch is an error.** Preparation restricts source rows to that PATID
+set before normalization. A bundle prepared for another cohort has already
+lost rows and cannot be repaired from itself; callers must pass the original
+unprepared sources instead of receiving a silently stale subset.
+
+**Change.** `.prepare_execution_sources()` records the key in the internal
+`ee_prepared_patids` attribute. A marked bundle passes through on an identical
+key and fails clearly on a different key.
+
+**Verification.** A focused two-patient probe reproduced the old stale reuse,
+then confirmed same-cohort reuse, rejection of cross-cohort reuse, and correct
+preparation of the second cohort from the original sources. All 46
+current-contract expectations pass, and the Phase 0 oracle is unchanged in all
+four cases.
+
+**Files changed.** `R/data.R` and this entry. Public results and authoring APIs
+are unchanged.
