@@ -12,7 +12,7 @@ lab_fixture <- function() {
         WEIGHT = c(1, 2, 3, 1, 1))
 }
 
-lab_variable <- function(code, value) {
+lab_variable <- function(code, value, ptype) {
     value <- rlang::enquo(value)
     concept <- concept_spec(
         paste("lab", code),
@@ -20,9 +20,10 @@ lab_variable <- function(code, value) {
     variable_spec(
         name = paste0(code, "_value"),
         channels = list(result = use_channel(
-            channel = "result", concept = concept)),
+            channel = "result", concept = concept,
+            search_within = "PATID")),
         output = from_channel(
-            "result", group_by = "PATID", value = !!value))
+            "result", group_by = "PATID", value = !!value, ptype = ptype))
 }
 
 test_that("data-masked values preserve aligned source rows and one-cell output", {
@@ -30,23 +31,27 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
     cohort <- tibble::tibble(PATID = "P1")
 
     numeric_run <- run_variable(
-        lab_variable("K.K", max(NUMRES, na.rm = TRUE)), cohort,
+        lab_variable("K.K", max(NUMRES, na.rm = TRUE), double()), cohort,
         sources = list(biology = biology))
     character_run <- run_variable(
         lab_variable(
-            "K.K", paste(STRRES[!is.na(STRRES)], collapse = "|")), cohort,
+            "K.K", paste(STRRES[!is.na(STRRES)], collapse = "|"),
+            character()), cohort,
         sources = list(biology = biology))
     date_run <- run_variable(
-        lab_variable("K.K", max(DATEXAM)), cohort,
+        lab_variable(
+            "K.K", max(DATEXAM),
+            as.POSIXct(character(), tz = "Europe/Paris")), cohort,
         sources = list(biology = biology))
     empty_run <- run_variable(
-        lab_variable("ABSENT", mean(NUMRES, na.rm = TRUE)), cohort,
+        lab_variable("ABSENT", mean(NUMRES, na.rm = TRUE), double()), cohort,
         sources = list(biology = biology))
     weight_options <- list(remove_missing = TRUE)
     weighted_run <- run_variable(
         lab_variable(
             "K.K", stats::weighted.mean(
-                NUMRES, WEIGHT, na.rm = weight_options$remove_missing)),
+                NUMRES, WEIGHT, na.rm = weight_options$remove_missing),
+            double()),
         cohort, sources = list(biology = biology))
     latest_class_run <- run_variable(
         lab_variable("K.K", {
@@ -60,7 +65,7 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
                     .default = "normal")
             }
             result
-        }),
+        }, character()),
         cohort, sources = list(biology = biology))
 
     # Engine invariant: one data-masked expression sees complete, aligned source
@@ -81,7 +86,7 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
 
     # With no candidate rows the expression is not evaluated and the task gets
     # one stable missing cell. Multiple returned cells remain a loud error.
-    expect_identical(empty_run$values$value, NA)
+    expect_identical(empty_run$values$value, NA_real_)
 
     # Channel status keeps row selection separate from model processing. A
     # deterministic channel never needs model processing, whether or not its
@@ -127,7 +132,7 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
 
     expect_error(
         run_variable(
-            lab_variable("K.K", NUMRES), cohort,
+            lab_variable("K.K", NUMRES, double()), cohort,
             sources = list(biology = biology)),
         "must return exactly one scalar or one list cell")
 
@@ -141,6 +146,7 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
         channels = list(result = use_channel(
             channel = "result",
             concept = absent_concept,
+            search_within = "PATID",
             filter_rows = {
                 if (FALSE) conditional_name <- 1
                 NUMREZ <- replace(NUMREZ, 1L, 0)
@@ -154,9 +160,26 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
         "missing prepared-source column.*NUMREZ, task_id, conditional_name")
     expect_error(
         run_variable(
-            lab_variable("K.K", task_id[[1L]]), cohort,
+            lab_variable("K.K", task_id[[1L]], character()), cohort,
             sources = list(biology = biology)),
         "missing prepared-source column.*task_id")
+
+    expect_error(
+        variable_spec(
+            name = "missing_scope",
+            channels = list(result = use_channel(
+                "result", concept = absent_concept)),
+            output = bin_output(group_by = "PATID")),
+        "requires search_within = 'PATID' or 'EVTID'")
+    expect_error(
+        variable_spec(
+            name = "missing_ptype",
+            channels = list(result = use_channel(
+                "result", concept = absent_concept,
+                search_within = "PATID")),
+            output = from_channel(
+                "result", group_by = "PATID", value = mean(NUMRES))),
+        "must declare ptype")
 })
 
 test_that("relational keys control qualification, evidence, and broadcast", {
@@ -181,22 +204,26 @@ test_that("relational keys control qualification, evidence, and broadcast", {
                 hb_low = use_channel(
                     channel = "hb",
                     concept = hemoglobin,
+                    search_within = "PATID",
                     filter_rows = .data$NUMRES < .env$low_threshold,
                     window = c(-Inf, 0)),
                 hb_group = use_channel(
                     channel = "hb",
                     concept = hemoglobin,
+                    search_within = "PATID",
                     group_by = "EVTID",
                     filter_groups = mean(NUMRES, na.rm = TRUE) < 12,
                     window = c(-Inf, 0)),
                 hb_payload = use_channel(
                     channel = "hb",
                     concept = hemoglobin,
+                    search_within = "PATID",
                     window = c(-Inf, 0))),
             combine = combine_channels("hb_low & hb_group", by = "EVTID"),
             output = from_channel(
                 "hb_payload", group_by = "PATID",
                 value = mean(NUMRES, na.rm = TRUE),
+                ptype = double(),
                 filter_by_qualified = filter_by))
     }
 
@@ -263,10 +290,12 @@ test_that("relational keys control qualification, evidence, and broadcast", {
             hb_gate = use_channel(
                 channel = "hb",
                 concept = hemoglobin,
+                search_within = "PATID",
                 window = c(-Inf, 0)),
             hb_low = use_channel(
                 channel = "hb",
                 concept = hemoglobin,
+                search_within = "PATID",
                 filter_rows = NUMRES < 12,
                 window = c(-Inf, 0))),
         combine = combine_channels("hb_gate & hb_low", by = "PATID"),
@@ -368,7 +397,8 @@ test_that("relational keys control qualification, evidence, and broadcast", {
             alpha = use_channel(
                 "text", concept = alpha_signal,
                 search_within = "PATID", method = "lucene"),
-            hb = use_channel("hb", concept = hemoglobin)),
+            hb = use_channel(
+                "hb", concept = hemoglobin, search_within = "PATID")),
         combine = combine_channels("alpha & hb", by = "ELTID"),
         output = bin_output(group_by = "PATID"))
     expect_error(
@@ -384,10 +414,12 @@ test_that("relational keys control qualification, evidence, and broadcast", {
             beta = use_channel(
                 "text", concept = beta_signal,
                 search_within = "PATID", method = "lucene"),
-            hb = use_channel("hb", concept = hemoglobin)),
+            hb = use_channel(
+                "hb", concept = hemoglobin, search_within = "PATID")),
         combine = combine_channels("alpha & beta", by = "ELTID"),
         output = from_channel(
             "hb", group_by = "PATID", value = mean(NUMRES, na.rm = TRUE),
+            ptype = double(),
             filter_by_qualified = "ELTID"))
     expect_error(
         resolve_variable_spec(cross_source_payload_variable),
@@ -411,9 +443,11 @@ test_that("relational keys control qualification, evidence, and broadcast", {
                 selected
             }),
         channels = list(hb = use_channel(
-            "hb", concept = hemoglobin, window = c(-Inf, 0))),
+            "hb", concept = hemoglobin, search_within = "PATID",
+            window = c(-Inf, 0))),
         output = from_channel(
-            "hb", group_by = "PATID", value = max(NUMRES, na.rm = TRUE)))
+            "hb", group_by = "PATID", value = max(NUMRES, na.rm = TRUE),
+            ptype = double()))
     expect_error(
         run_variable(
             crossed_anchor,

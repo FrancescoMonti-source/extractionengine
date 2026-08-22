@@ -120,8 +120,9 @@ The names connect the authoring layers explicitly:
 - both concepts may use the local channel name `lab`; and
 - inside a variable, the name on the left of `channels = list(...)` is an
   activation alias, while
-  `use_channel(channel = "lab", concept = potassium)` names both the reusable
-  concept and the channel it activates.
+  `use_channel(channel = "lab", concept = potassium,
+  search_within = "EVTID")` names both the reusable concept and the channel it
+  activates, plus the source-row boundary for each task.
 
 Combine expressions, outputs, evidence, and audit tables refer to activation
 aliases. An alias may reuse its origin's name, as in the first example, or give
@@ -149,14 +150,16 @@ mean_potassium_by_stay <- variable_spec(
   channels = list(
     potassium = use_channel(
       channel = "lab",
-      concept = potassium
+      concept = potassium,
+      search_within = "EVTID"
     )
   ),
 
   output = from_channel(
     channel = "potassium",
     group_by = "EVTID",
-    value = mean(NUMRES, na.rm = TRUE)
+    value = mean(NUMRES, na.rm = TRUE),
+    ptype = double()
   )
 )
 
@@ -183,7 +186,8 @@ For a deterministic channel, `value` is one data-masked expression: bare names
 refer to aligned prepared-source columns. It sees missing values too, so handling
 them with `na.rm`, `is.na()`, or another explicit rule belongs to the author. The
 expression must return exactly one atomic value or one list cell per task. With
-no candidate rows it is not evaluated and the engine publishes logical `NA`.
+no candidate rows it is not evaluated and the engine publishes the typed missing
+value declared by `ptype`; non-empty results are cast to that same prototype.
 
 ## 4. Qualify stays without publishing a laboratory value
 
@@ -206,11 +210,13 @@ ionic_alert_by_stay <- variable_spec(
     potassium_high = use_channel(
       channel = "lab",
       concept = potassium,
+      search_within = "EVTID",
       filter_rows = NUMRES > 5.2
     ),
     sodium_low = use_channel(
       channel = "lab",
       concept = sodium,
+      search_within = "EVTID",
       filter_rows = NUMRES < 135
     )
   ),
@@ -258,16 +264,19 @@ mean_k_in_qualified_stays <- variable_spec(
     potassium_high = use_channel(
       channel = "lab",
       concept = potassium,
+      search_within = "PATID",
       filter_rows = NUMRES > 5.2
     ),
     sodium_low = use_channel(
       channel = "lab",
       concept = sodium,
+      search_within = "PATID",
       filter_rows = NUMRES < 135
     ),
     potassium_rows = use_channel(
       channel = "lab",
-      concept = potassium
+      concept = potassium,
+      search_within = "PATID"
     )
   ),
 
@@ -280,6 +289,7 @@ mean_k_in_qualified_stays <- variable_spec(
     channel = "potassium_rows",
     group_by = "PATID",
     value = mean(NUMRES, na.rm = TRUE),
+    ptype = double(),
     filter_by_qualified = "EVTID"
   )
 )
@@ -296,16 +306,19 @@ mean_k_in_qualified_patients <- variable_spec(
     potassium_high = use_channel(
       channel = "lab",
       concept = potassium,
+      search_within = "PATID",
       filter_rows = NUMRES > 5.2
     ),
     sodium_low = use_channel(
       channel = "lab",
       concept = sodium,
+      search_within = "PATID",
       filter_rows = NUMRES < 135
     ),
     potassium_rows = use_channel(
       channel = "lab",
-      concept = potassium
+      concept = potassium,
+      search_within = "PATID"
     )
   ),
 
@@ -318,6 +331,7 @@ mean_k_in_qualified_patients <- variable_spec(
     channel = "potassium_rows",
     group_by = "PATID",
     value = mean(NUMRES, na.rm = TRUE),
+    ptype = double(),
     filter_by_qualified = "PATID"
   )
 )

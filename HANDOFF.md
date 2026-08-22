@@ -2138,3 +2138,38 @@ sources successfully. No mock-only permanent test was added.
 
 **Files changed.** `R/run_variable.R` and this entry. Output values, source
 preparation, and the public authoring API are unchanged.
+
+## Phase 2 explicit channel scope and deterministic output type (2026-08-22)
+
+**Decision.** Every `use_channel()` activation must declare
+`search_within = "PATID"` or `"EVTID"`. Windows filter dates inside that
+relation; neither a window nor the output grain may infer it. `ELTID` remains a
+legitimate `combine_channels(by = "ELTID")` key for aliases of one source, but is
+not a search scope. Deterministic `from_channel(value = ...)` must also declare a
+zero-length vector `ptype`; LLM output omits both `value` and `ptype` because its
+`TypeObject` already declares the result schema.
+
+**Change.** `search_within` is now a required `use_channel()` argument, the old
+structured-channel prohibition is gone, and `.channel_scope_keys()` is a lookup
+instead of the two window/output-grain fallbacks. Deterministic empty tasks get a
+typed missing value from `ptype`, non-empty scalar results are cast to it with
+`vctrs`, and the exact prototype is retained in the execution manifest. Package
+fixtures and examples were re-authored once for both breaking authoring changes:
+stay-local examples use `EVTID`; patient histories and patient-level tasks use
+`PATID`.
+
+**Verification.** The current-contract suite passes all 48 expectations,
+including explicit rejection of a missing scope and a missing deterministic
+`ptype`, and verifies a double missing value for an empty numeric task. The four
+Phase 0 differential cases are unchanged against `after-1.10.rds`. A full source
+build creates both vignettes, and `R CMD check --no-manual
+--no-build-vignettes` finishes with `Status: OK`, including tests, documentation,
+and execution of both vignette sources. A static scan of the adjacent local Git
+and Desktop project roots found no `use_channel()` or `from_channel()` callers
+outside this repository.
+
+**Files changed.** `DESCRIPTION`, `R/operators.R`, `R/spec.R`,
+`R/run_variable.R`, `tests/testthat/test-current-contracts.R`,
+`tools/differential-oracle/fixtures.R`, `README.md`, `DESIGN.md`,
+`vignettes/getting-started.Rmd`, `man/operators.Rd`, `man/variable_spec.Rd`, and
+this entry.

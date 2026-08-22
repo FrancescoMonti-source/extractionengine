@@ -29,9 +29,9 @@ The executable definition has three deliberately separate layers:
 2. `use_channel()` activates one named channel from an explicitly supplied
    concept, or one self-contained inline channel, and decides how candidate rows
    are used.
-3. `bin_output(group_by)` or `from_channel(..., group_by, value)` decides the
-   final grain, what is published, and, for a deterministic payload, the
-   data-masked value expression.
+3. `bin_output(group_by)` or `from_channel(..., group_by, value, ptype)` decides
+   the final grain, what is published, and, for a deterministic payload, the
+   data-masked value expression and its result type.
 
 `resolve_variable_spec()` is the single compiled representation consumed by
 execution, `inspect()`, and provenance. Constructors fail closed: every accepted
@@ -63,9 +63,11 @@ activation alias. `selector =` is an explicit local replacement.
 
 Operational row, group, and time rules also belong to the activation:
 
+- `search_within = "PATID"` or `"EVTID"` is mandatory and declares the
+  source-row relation visible to each task;
 - `window = c(from_days, to_days)` filters this activation relative to the
-  variable's shared `anchor`; an activation without a window keeps the existing
-  task-grain behavior;
+  variable's shared `anchor`; it filters dates inside `search_within` and does
+  not infer or narrow that relation;
 - `filter_rows` is evaluated independently per task after selector, relational,
   and window selection. It is a data-masked expression over the real
   prepared-source columns, returns one logical per row, treats `NA` as `FALSE`,
@@ -91,30 +93,31 @@ combine expression.
 ## Output and cardinality
 
 `bin_output(group_by)` publishes observed membership or the result of hit-set
-algebra. `from_channel(channel, group_by, value = NULL,
+algebra. `from_channel(channel, group_by, value = NULL, ptype = NULL,
 filter_by_qualified = NULL)` publishes one activation's payload. `group_by` is
 mandatory in both constructors and is the only declaration of final result
 grain; there is no default PATID.
 
-For deterministic channels, `value` is mandatory and is evaluated once per
+For deterministic channels, `value` and a zero-length vector `ptype` are
+mandatory. The expression is evaluated once per
 final group in a data mask containing its complete, row-aligned prepared-source
 rows. It may reference several columns; missing values are not removed
 automatically. If no payload row remains, the expression is not evaluated and a
-logical `NA` is published. Otherwise it must return exactly one cell: one atomic
-scalar or one list cell. Longer or dimensional results are cardinality errors.
+typed missing value is created from `ptype`. Otherwise it must return exactly one
+cell and be castable to `ptype`: one atomic scalar or one list cell. Longer or
+dimensional results are cardinality errors.
 A row carrying `NUMRES`, `STRRES`, both, or neither is valid until the authored
 expression uses those columns.
 
-For a `lucene_llm` activation, `value` must be omitted and the complete
-structured result frame is published.
+For a `lucene_llm` activation, `value` and `ptype` must be omitted because the
+authored response schema already defines the complete structured result frame.
 
 ## Relational keys and output grain
 
 The combine and output contracts are self-contained:
 
-- `search_within` in a text `use_channel()` controls the document relation
-  searched before Lucene retrieval and is initially limited to `PATID` or
-  `EVTID`;
+- `search_within` in every `use_channel()` controls the source-row relation
+  searched before selection or retrieval and is limited to `PATID` or `EVTID`;
 - `combine = combine_channels(expr, by)` defines both the boolean expression and
   the identity-spine key where activated signals must coexist;
 - `filter_by_qualified` in `from_channel()` chooses the key used to
@@ -259,9 +262,9 @@ The execution manifest and `inspect()` record activation alias,
 `origin_concept`, `origin_channel`, source, and inline/catalog origin,
 original and effective selector, row/group filters, activation window,
 `search_within`, `combine$by`, `filter_by_qualified`, `output$group_by`, selected
-output value expression, response schema, and LLM configuration. Their output
-view follows the execution order `combine by -> filter by qualified -> group by
--> evaluate value`.
+output value expression and `ptype`, response schema, and LLM configuration.
+Their output view follows the execution order `combine by -> filter by qualified
+-> group by -> evaluate value`.
 
 `variable_spec(name =)` is the canonical public identifier. `run_protocol()`
 accepts an entirely unnamed list or an entirely named list whose names match

@@ -220,7 +220,7 @@ concept_spec <- function(name, channels) {
 use_channel <- function(channel, concept = NULL, selector = NULL,
                         filter_rows = NULL,
                         group_by = NULL, filter_groups = NULL,
-                        search_within = NULL, window = NULL, method = NULL,
+                        search_within, window = NULL, method = NULL,
                         model = NULL, model_params = list(),
                         response = NULL, rationale = TRUE,
                         user_prompt = NULL, system_prompt = NULL,
@@ -319,11 +319,10 @@ use_channel <- function(channel, concept = NULL, selector = NULL,
                  call. = FALSE)
         }
     }
-    if (!is.null(search_within) &&
-        (!is.character(search_within) ||
-         length(search_within) != 1L || is.na(search_within) ||
-         !search_within %in% c("PATID", "EVTID"))) {
-        stop("use_channel() search_within must be PATID, EVTID, or NULL.",
+    if (missing(search_within) ||
+        !is.character(search_within) || length(search_within) != 1L ||
+        is.na(search_within) || !search_within %in% c("PATID", "EVTID")) {
+        stop("use_channel() requires search_within = 'PATID' or 'EVTID'.",
              call. = FALSE)
     }
     window <- .as_window(window)
@@ -399,8 +398,7 @@ use_channel <- function(channel, concept = NULL, selector = NULL,
         origin_kind = "concept")
 }
 
-.check_text_channel_uses <- function(channels) {
-    needs_chat <- FALSE
+.check_channel_methods <- function(channels) {
     for (alias in names(channels)) {
         activation <- channels[[alias]]
         definition <- .activation_channel_definition(alias, activation)$definition
@@ -413,19 +411,8 @@ use_channel <- function(channel, concept = NULL, selector = NULL,
             stop("Activation '", alias, "' uses method = '", activation$method,
                  "', but its channel is not a text channel.", call. = FALSE)
         }
-        if (!is_text && !is.null(activation$search_within)) {
-            stop("Activation '", alias,
-                 "' declares search_within, but its channel is not textual.",
-                 call. = FALSE)
-        }
-        if (is_text && is.null(activation$search_within)) {
-            stop("Text activation '", alias,
-                 "' requires search_within = 'PATID' or 'EVTID'.",
-                 call. = FALSE)
-        }
-        needs_chat <- needs_chat || identical(activation$method, "lucene_llm")
     }
-    needs_chat
+    invisible(TRUE)
 }
 
 .check_llm_grain_collisions <- function(channels, output_group_by) {
@@ -521,6 +508,10 @@ use_channel <- function(channel, concept = NULL, selector = NULL,
             stop("from_channel() value is for deterministic source rows; omit it ",
                  "to publish the complete structured LLM record.", call. = FALSE)
         }
+        if (!is.null(output$ptype)) {
+            stop("LLM from_channel() output derives its schema from response; ",
+                 "omit ptype.", call. = FALSE)
+        }
         if (!is.null(output$filter_by_qualified) &&
             !identical(output$filter_by_qualified, output$group_by)) {
             stop("An LLM response is already one row per output task; in a ",
@@ -538,6 +529,10 @@ use_channel <- function(channel, concept = NULL, selector = NULL,
     if (is.null(output$value)) {
         stop("from_channel() must declare value = <data-masked expression> for ",
              "deterministic activation '", output$channel, "'.", call. = FALSE)
+    }
+    if (is.null(output$ptype)) {
+        stop("Deterministic from_channel() must declare ptype = <zero-length ",
+             "vector prototype>.", call. = FALSE)
     }
     invisible(TRUE)
 }
@@ -560,7 +555,7 @@ variable_spec <- function(name, anchor = NULL, channels = list(),
              call. = FALSE)
     }
     channels <- .normalize_variable_channels(channels)
-    .check_text_channel_uses(channels)
+    .check_channel_methods(channels)
     .check_llm_grain_collisions(channels, output$group_by)
 
     windowed <- names(channels)[vapply(
@@ -749,6 +744,10 @@ print.ee_variable_spec <- function(x, ...) {
             if (is.null(resolved$output$value)) "all LLM fields" else
                 .one_line(resolved$output$value),
             "\n", sep = "")
+        if (!is.null(resolved$output$ptype)) {
+            cat("Payload type: ",
+                vctrs::vec_ptype_full(resolved$output$ptype), "\n", sep = "")
+        }
         if (!is.null(resolved$output$filter_by_qualified)) {
             cat("Filter by qualified: ",
                 resolved$output$filter_by_qualified, "\n", sep = "")

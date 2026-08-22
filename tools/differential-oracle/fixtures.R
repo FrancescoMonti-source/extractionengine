@@ -52,11 +52,13 @@ DifferentialFakeChat <- R6::R6Class(
         channels = list(result = use_channel(
             "result",
             concept = potassium,
+            search_within = "PATID",
             filter_rows = NUMRES >= .env$minimum_value)),
         output = from_channel(
             "result",
             group_by = "PATID",
-            value = mean(NUMRES, na.rm = TRUE)))
+            value = mean(NUMRES, na.rm = TRUE),
+            ptype = double()))
     run <- run_variable(
         variable,
         cohort = tibble::tibble(PATID = c("P1", "P2")),
@@ -87,8 +89,12 @@ DifferentialFakeChat <- R6::R6Class(
     variable <- variable_spec(
         name = "synthetic_same_sample_electrolytes",
         channels = list(
-            potassium = use_channel("potassium", concept = electrolytes),
-            sodium = use_channel("sodium", concept = electrolytes)),
+            potassium = use_channel(
+                "potassium", concept = electrolytes,
+                search_within = "PATID"),
+            sodium = use_channel(
+                "sodium", concept = electrolytes,
+                search_within = "PATID")),
         combine = combine_channels("potassium & sodium", by = "ELTID"),
         output = bin_output(group_by = "PATID"))
     run <- run_variable(
@@ -184,11 +190,13 @@ DifferentialFakeChat <- R6::R6Class(
         channels = list(document = use_channel(
             "document",
             concept = preoperative,
+            search_within = "PATID",
             window = c(-30, 0))),
         output = from_channel(
             "document",
             group_by = "PATID",
-            value = max(RECDATE)))
+            value = max(RECDATE),
+            ptype = as.Date(character())))
     run <- run_variable(
         variable,
         cohort = tibble::tibble(

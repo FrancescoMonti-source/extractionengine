@@ -25,7 +25,8 @@ Imports:
     S7,
     stringr,
     tibble,
-    tidyr
+    tidyr,
+    vctrs
 Suggests:
     knitr,
     pkgload,

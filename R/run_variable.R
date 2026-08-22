@@ -637,7 +637,7 @@
     tasks
 }
 
-.channel_scope_keys <- function(channel_def, variable, tasks, grain_keys) {
+.channel_scope_keys <- function(channel_def, tasks) {
     if (identical(channel_def$search_within, "EVTID")) {
         required <- c("PATID", "EVTID")
         missing <- setdiff(required, names(tasks))
@@ -655,7 +655,8 @@
         return(required)
     }
     if (identical(channel_def$search_within, "PATID")) return("PATID")
-    if (is.null(channel_def$window)) grain_keys else "PATID"
+    stop("Channel '", channel_def$name,
+         "' lacks a valid search_within declaration.", call. = FALSE)
 }
 
 # Dispatch by channel TYPE. Each branch wraps an existing tested executor.
@@ -913,17 +914,16 @@
         drop = FALSE)
 }
 
-.bind_scalar_values <- function(values) {
-    if (!length(values)) return(logical())
-    bind_rows(lapply(values, function(value) list(value = value)))$value
+.bind_scalar_values <- function(values, ptype) {
+    if (!length(values)) return(vctrs::vec_init(ptype, 0L))
+    unname(do.call(vctrs::vec_c, c(values, list(.ptype = ptype))))
 }
 
 .eval_from_channel_value <- function(rows, output, variable_name, channel_name) {
     mask_columns <- setdiff(names(rows), "task_id")
-    # Do not evaluate author code for an absent task. A logical NA is the only
-    # stable prototype available without either running the expression on an
-    # artificial zero-row mask or requiring a separately declared output type.
-    if (!nrow(rows)) return(NA)
+    # Do not evaluate author code for an absent task. The declared prototype
+    # supplies its one typed missing value.
+    if (!nrow(rows)) return(vctrs::vec_init(output$ptype, 1L))
     mask <- rows[mask_columns]
     value <- tryCatch(
         rlang::eval_tidy(output$value, data = mask),
@@ -940,7 +940,14 @@
              if (is.null(dim(value))) "." else " with dimensions.",
              call. = FALSE)
     }
-    value
+    tryCatch(
+        vctrs::vec_cast(value, output$ptype),
+        error = function(cnd) {
+            stop("from_channel() value for '", variable_name,
+                 "' cannot be cast to declared ptype ",
+                 vctrs::vec_ptype_full(output$ptype), ": ",
+                 conditionMessage(cnd), call. = FALSE)
+        })
 }
 
 .statuses_from_processing_states <- function(states) {
@@ -1025,7 +1032,7 @@
     values <- tibble::tibble(
         task_id = task_ids,
         variable = variable$name,
-        value = .bind_scalar_values(value_rows),
+        value = .bind_scalar_values(value_rows, output$ptype),
         channel_coverage = channel_coverage,
         n_payload_rows = n_payload_rows)
     status <- .channel_status_rows(variable, channel_name, result, task_ids)
@@ -1142,10 +1149,10 @@
                 gate$channel_coverage[[i]] <- "partial"
             }
         } else {
-            value_rows[[i]] <- NA
+            value_rows[[i]] <- vctrs::vec_init(output$ptype, 1L)
         }
     }
-    gate$value <- .bind_scalar_values(value_rows)
+    gate$value <- .bind_scalar_values(value_rows, output$ptype)
     gate$n_payload_rows <- n_payload
     out$values <- gate
     out
@@ -1632,6 +1639,9 @@
         if (!is.null(variable$output$value)) {
             out$value <- .one_line(variable$output$value)
         }
+        if (!is.null(variable$output$ptype)) {
+            out$ptype <- variable$output$ptype
+        }
         if (!is.null(variable$output$filter_by_qualified)) {
             out$filter_by_qualified <- variable$output$filter_by_qualified
         }
@@ -1682,6 +1692,9 @@ print.ee_execution_manifest <- function(x, ...) {
     cat("  output: ", output_label, "\n", sep = "")
     if (!is.null(output$filter_by_qualified)) {
         cat("  filter by qualified: ", output$filter_by_qualified, "\n", sep = "")
+    }
+    if (!is.null(output$ptype)) {
+        cat("  ptype: ", vctrs::vec_ptype_full(output$ptype), "\n", sep = "")
     }
     cat("  group by: ", output$group_by, "\n", sep = "")
 
@@ -1881,12 +1894,11 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
     # a global test/debug override for every LLM activation in this run. Per-task
     # Chat clones still isolate conversation state within each activation.
     channel_chats <- .resolve_channel_chats(variable, chat)
-    # Scoping rule (DESIGN §7): an explicit event evidence scope constrains rows
-    # to PATID + EVTID. Otherwise a declared window gathers per subject inside
-    # each task's anchored window; with no window, the output grain is the scope.
+    # Scoping rule (DESIGN §7): every activation declares whether it searches
+    # within PATID or PATID + EVTID. Windows filter dates inside that relation.
     channel_results <- lapply(names(variable$channels), function(channel_name) {
         scope_keys <- .channel_scope_keys(
-            .channel_def(variable, channel_name), variable, tasks, grain_keys)
+            .channel_def(variable, channel_name), tasks)
         .run_selected_channel(
             variable, channel_name, tasks, sources,
             channel_chats[[channel_name]],

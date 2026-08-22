@@ -11,7 +11,13 @@ combine_channels(expr, by)
 
 bin_output(group_by)
 
-from_channel(channel, group_by, value = NULL, filter_by_qualified = NULL)
+from_channel(
+  channel,
+  group_by,
+  value = NULL,
+  ptype = NULL,
+  filter_by_qualified = NULL
+)
 }
 \arguments{
 \item{source}{The registered prepared source used to derive an index event.}
@@ -36,6 +42,11 @@ read that same source too.}
 over the complete, aligned prepared-source rows of each final group. It may use
 multiple columns and must return exactly one cell. Omit it for an LLM activation
 to publish the complete structured frame.}
+\item{ptype}{For a deterministic activation, a mandatory zero-length vector
+prototype such as \code{double()}, \code{character()}, or
+\code{as.Date(character())}. Empty tasks receive its typed missing value and
+non-empty results must cast to it. Omit it for an LLM activation, whose response
+schema already declares its fields.}
 \item{filter_by_qualified}{Optional qualifying-relation key used to filter native
 payload rows before terminal grouping. It is admitted and required only when
 \code{combine$by} is finer than the output \code{group_by}, and must then equal
@@ -57,16 +68,17 @@ Data-masked expressions see prepared-source columns as bare names. \code{.data}
 supports programmatic column selection and \code{.env} disambiguates captured
 external values. Missing values remain aligned and are not removed automatically.
 When no payload row remains, \code{value} is not evaluated and the result is a
-logical missing value. Otherwise it must return one atomic scalar or one list
-cell; longer or dimensional results are cardinality errors. Hit-set expressions
-operate on observed membership and do not encode clinical ontology.
+typed missing value created from \code{ptype}. Otherwise it must return one
+atomic scalar or one list cell castable to \code{ptype}; longer or dimensional
+results are cardinality errors. Hit-set expressions operate on observed
+membership and do not encode clinical ontology.
 \code{combine_channels(expr, by)} accepts exactly one boolean expression string; no
 separate public hit-set helper constructors are required.
 
 For payload output, execution is ordered as combine by, filter by qualified,
 group by, then evaluate value. The expression is evaluated once for each final
 group over its aligned raw rows, without implicit missing-value removal or an
-intermediate aggregation. LLM output omits \code{value}.
+intermediate aggregation. LLM output omits both \code{value} and \code{ptype}.
 
 \code{index_event()} is resolved from its named source before channel execution;
 it is not associated with or inferred from a \code{use_channel()} activation.

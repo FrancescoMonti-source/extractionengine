@@ -71,11 +71,13 @@ mean_hb_for_patients_with_anemic_stays <- variable_spec(
     ),
     hb = use_channel(
       channel = "hb",
-      concept = anemia
+      concept = anemia,
+      search_within = "PATID"
     ),
     hb_low = use_channel(
       channel = "hb",
       concept = anemia,
+      search_within = "PATID",
       filter_rows = NUMRES < ifelse(PATSEX == "F", 12, 13)
     )
   ),
@@ -89,6 +91,7 @@ mean_hb_for_patients_with_anemic_stays <- variable_spec(
     "hb",
     group_by = "PATID",
     value = mean(NUMRES, na.rm = TRUE),
+    ptype = double(),
     filter_by_qualified = "PATID"
   )
 )
@@ -113,6 +116,10 @@ grain. The mandatory `group_by` in `bin_output(group_by = ...)` or
 `from_channel(group_by = ...)` independently defines that terminal grain.
 An activation may also declare `window = c(from_days, to_days)` relative to the
 variable's shared `anchor`; other activations remain unwindowed.
+Every activation also declares `search_within = "PATID"` or `"EVTID"`; this is
+the source-row boundary for each task, independently of window and output grain.
+For deterministic `from_channel()`, `ptype` declares the result type, supplies a
+typed missing value for empty tasks, and rejects values that cannot be cast to it.
 
 A character anchor names an exact `Date` or `POSIXt` column supplied by the
 cohort. For example, a stay-grain cohort may carry `PATID`, `EVTID`, and
@@ -131,9 +138,9 @@ independent of the variable's activated channels.
 
 The relational declarations answer different questions:
 
-- `search_within = "PATID"` makes the patient's documents eligible before
-  retrieval; their native `EVTID`, when present, can still support a finer
-  combine; text activations must declare `"PATID"` or `"EVTID"`;
+- `search_within = "PATID"` makes the patient's source rows eligible before
+  channel selection or retrieval; their native `EVTID`, when present, can still
+  support a finer combine; every activation must declare `"PATID"` or `"EVTID"`;
 - `combine_channels(..., by = "EVTID")` requires the text and low-Hb signals to
   coexist in a stay;
 - `filter_by_qualified = "PATID"` lets the value expression see all Hb rows of each
@@ -181,6 +188,7 @@ from_channel(
   "hb",
   group_by = "PATID",
   value = mean(NUMRES, na.rm = TRUE),
+  ptype = double(),
   filter_by_qualified = "EVTID"
 )
 ```
@@ -203,6 +211,7 @@ from_channel(
   "hb",
   group_by = "PATID",
   value = mean(NUMRES, na.rm = TRUE),
+  ptype = double(),
   filter_by_qualified = "PATID"
 )
 ```

@@ -23,7 +23,7 @@ use_channel(
   filter_rows = NULL,
   group_by = NULL,
   filter_groups = NULL,
-  search_within = NULL,
+  search_within,
   window = NULL,
   method = NULL,
   model = NULL,
@@ -74,9 +74,9 @@ argument does not set the final output grain; output constructors have their own
 mandatory \code{group_by}.}
 \item{filter_groups}{A data-masked expression evaluated on survivors of
 \code{filter_rows}. It must return exactly one non-missing logical per group.}
-\item{search_within}{Text-source search relation, \code{"PATID"} or
-\code{"EVTID"}. It is mandatory for text activations and does not determine
-combine, payload, or output grain.}
+\item{search_within}{Mandatory source-row relation, \code{"PATID"} or
+\code{"EVTID"}, visible to each task before channel selection or retrieval. It
+does not determine combine, payload, or output grain.}
 \item{window}{Activation-specific \code{NULL} or
 \code{c(from_days, to_days)} relative to the variable's explicit anchor.}
 \item{method}{For text channels, \code{"lucene"} or
@@ -113,7 +113,7 @@ controls variable-local use, and the output publishes membership or an explicit
 channel payload.
 }
 \details{
-Text activations must declare \code{search_within}. Event-level search requires
+Every activation must declare \code{search_within}. Event-level search requires
 an EVTID-bearing task through \code{output$group_by = "EVTID"} or
 \code{index_event()}. Output \code{group_by} is always explicit and is the only
 source of final grain. When \code{combine$by} is finer than that grain, a

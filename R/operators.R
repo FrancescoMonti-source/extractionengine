@@ -136,7 +136,7 @@ DEFAULT_RATIONALE_DESCRIPTION <- paste(
     "Justification br\u00e8ve du choix, fond\u00e9e uniquement sur les extraits",
     "et sans ajouter d'information non document\u00e9e.")
 
-from_channel <- function(channel, group_by, value = NULL,
+from_channel <- function(channel, group_by, value = NULL, ptype = NULL,
                          filter_by_qualified = NULL) {
     value <- rlang::enquo(value)
     if (rlang::quo_is_null(value)) value <- NULL
@@ -153,8 +153,18 @@ from_channel <- function(channel, group_by, value = NULL,
              "ELTID, or NULL.", call. = FALSE)
     }
     group_by <- .check_output_group_by(group_by, "from_channel()")
+    if (!is.null(ptype)) {
+        size <- tryCatch(
+            vctrs::vec_size(ptype),
+            error = function(cnd) NA_integer_)
+        if (is.na(size) || size != 0L) {
+            stop("from_channel() ptype must be a zero-length vector prototype.",
+                 call. = FALSE)
+        }
+    }
     .new_spec(
         list(kind = "from_channel", channel = channel, value = value,
+             ptype = ptype,
              filter_by_qualified = filter_by_qualified,
              group_by = group_by),
         "ee_output_type")
