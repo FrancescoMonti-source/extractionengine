@@ -1999,3 +1999,42 @@ built-vignette outputs, while both vignette source files execute successfully.
 
 **Files changed.** `R/structured.R` and this entry. No public or private result
 field, executor input, or authoring API changed.
+
+## Phase 1.6 dead declarative surface (2026-08-22)
+
+**Decision.** Delete `native_grain`, `produces`, `act_channel()`, and the
+structured-executor `derivation` tables. These are four removals, not one new
+abstraction. `native_grain` and `act_channel()` are intentional authoring-API
+breaks; no compatibility shim was added.
+
+**Why each removal is earned.** `native_grain` was validated, copied through
+`inspect()` and resolution, and never used to decide scope or output grain.
+`produces` was derived from the channel type, copied into the resolved spec, and
+never read. `act_channel()` had no repository caller; its `"act"` dispatch was
+identical to `"code"` and became unreachable with the constructor gone. CCAM
+remains explicit through `ccam()` inside `code_channel()`; the registered coded
+source continues to own the physical code/date binding. Finally, `derivation`
+was constructed independently by the three structured executors and then copied
+mechanically into `audit$internal$channel_intermediates`; no code, test, or live
+documentation read it.
+
+**Change.** Channel constructors no longer accept or store `native_grain`, and
+resolved/inspection objects no longer carry it or `produces`. The exported
+`act_channel()` wrapper, its now-unreachable type branch, its `NAMESPACE` entry,
+and its help alias were removed. Structured code, document, and laboratory
+executors no longer allocate their unused `derivation` frames. `man/channels.Rd`
+now matches the reduced signatures.
+
+**Verification.** Static whole-repository search found no live callers or
+consumers. The Phase 0 oracle is unchanged in all four cases and all 46
+current-contract expectations pass. A synthetic CCAM run through
+`code_channel("pmsi_actes", ccam(...))` produced `value = 1`; its resolved channel
+has type `"code"`, and its internal objects contain none of `native_grain`,
+`produces`, or `derivation`. `R CMD build` passes. `R CMD check --no-manual
+--no-build-vignettes` validates installation, code, documentation, and tests;
+its only two warnings are the expected missing built-vignette outputs caused by
+that option, while both vignette source files execute successfully.
+
+**Files changed.** `R/channels.R`, `R/spec.R`, `R/run_variable.R`,
+`R/structured.R`, `NAMESPACE`, `man/channels.Rd`, and this entry. Public
+`values`, `channel_status`, and `evidence` did not change.

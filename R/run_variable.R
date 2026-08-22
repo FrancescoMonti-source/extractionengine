@@ -678,7 +678,7 @@
              "' requires a registered prepared EDSAN source; got '", source,
              "'.", call. = FALSE)
     }
-    if (channel_def$type %in% c("code", "act", "lab")) {
+    if (channel_def$type %in% c("code", "lab")) {
         validate_source_view(sources[[source]], spec)
     }
     # The window is only meaningful for date/interval-scoped structured channels;
@@ -686,10 +686,9 @@
     # text-only variable (e.g. event-scoped anastomoses) need not declare a window.
     #
     switch(channel_def$type,
-        code = ,
-        act = {
-            # code (CIM-10 over pmsi$diag) and act (CCAM over pmsi$actes) share the
-            # neutral membership executor; only the source binding differs.
+        code = {
+            # A code selector (CIM-10 or CCAM) uses the neutral membership
+            # executor; the source binding supplies its physical columns.
             sel <- selector
             bind <- .code_source_binding(source)
             w <- if (is.null(channel_def$window)) {
@@ -1443,7 +1442,7 @@
 
     if (is.data.frame(result$audit_counts)) {
         counts[[length(counts) + 1L]] <- result$audit_counts
-    } else if (channel$type %in% c("code", "act", "lab", "doc")) {
+    } else if (channel$type %in% c("code", "lab", "doc")) {
         counts[[length(counts) + 1L]] <- .audit_stage(
             task_ids, channel_name, "pre_selector", "source_row",
             .audit_coverage_count(result, task_ids, "n_source_rows"))

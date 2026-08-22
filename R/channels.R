@@ -1,12 +1,5 @@
 # Channel and selector constructors ------------------------------------------
 
-.channel_produces <- c(
-    code = "code_hit",
-    act = "act_hit",
-    lab = "lab_rows",
-    text = "text_candidate",
-    doc = "doc_hit")
-
 .check_llm_definition <- function(x, what = "definition") {
     required <- c("system_prompt", "type_builder", "prompt_builder", "parser")
     if (!inherits(x, "ee_llm_definition") || !all(required %in% names(x)) ||
@@ -29,24 +22,17 @@
     invisible(TRUE)
 }
 
-channel <- function(source, selector, type,
-                    native_grain = NA_character_, required_roles = character()) {
+channel <- function(source, selector, type, required_roles = character()) {
     if (!is.character(source) || length(source) != 1L || !nzchar(source)) {
         stop("source must be one non-empty string.", call. = FALSE)
     }
     if (!is.character(type) || length(type) != 1L ||
-        !type %in% names(.channel_produces)) {
-        stop("type must be one of: ", paste(names(.channel_produces), collapse = ", "),
-             ".", call. = FALSE)
+        !type %in% c("code", "lab", "text", "doc")) {
+        stop("type must be one of: code, lab, text, doc.", call. = FALSE)
     }
     if (!inherits(selector, "ee_selector")) {
         stop("selector must be created with a selector constructor.",
              call. = FALSE)
-    }
-    if (!(length(native_grain) == 1L &&
-          (is.na(native_grain) ||
-           (is.character(native_grain) && nzchar(native_grain))))) {
-        stop("native_grain must be one non-empty string or NA.", call. = FALSE)
     }
     if (!is.character(required_roles) || anyNA(required_roles) ||
         any(!nzchar(required_roles))) {
@@ -57,42 +43,30 @@ channel <- function(source, selector, type,
             type = type,
             source = source,
             selector = selector,
-            produces = unname(.channel_produces[[type]]),
-            native_grain = native_grain,
             required_roles = unique(required_roles)),
         "ee_channel")
 }
 
-code_channel <- function(source, selector, native_grain = NA_character_,
-                         required_roles = character()) {
+code_channel <- function(source, selector, required_roles = character()) {
     .check_channel_selector(selector, "code", "code")
-    channel(source, selector, "code", native_grain, required_roles)
-}
-
-act_channel <- function(source, selector, native_grain = NA_character_,
-                        required_roles = character()) {
-    .check_channel_selector(selector, "code", "act")
-    channel(source, selector, "act", native_grain, required_roles)
+    channel(source, selector, "code", required_roles)
 }
 
 lab_channel <- function(source = "biology", selector,
-                        native_grain = NA_character_,
                         required_roles = character()) {
     .check_channel_selector(selector, "analyte", "lab")
-    channel(source, selector, "lab", native_grain, required_roles)
+    channel(source, selector, "lab", required_roles)
 }
 
 text_channel <- function(selector, source = "documents",
-                         native_grain = NA_character_,
                          required_roles = character()) {
     .check_channel_selector(selector, "lucene_query", "text")
-    channel(source, selector, "text", native_grain, required_roles)
+    channel(source, selector, "text", required_roles)
 }
 
-doc_channel <- function(source, selector, native_grain = NA_character_,
-                        required_roles = character()) {
+doc_channel <- function(source, selector, required_roles = character()) {
     .check_channel_selector(selector, "doc_meta", "doc")
-    channel(source, selector, "doc", native_grain, required_roles)
+    channel(source, selector, "doc", required_roles)
 }
 
 .check_codes <- function(codes, what) {

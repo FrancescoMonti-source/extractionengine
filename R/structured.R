@@ -350,11 +350,12 @@
 }
 
 # --- generic code presence: a code family over a coded source ------------------
-# Neutral structured executor behind the run_variable() code (CIM-10 / pmsi$diag)
-# AND act (CCAM / pmsi$actes) branches. Per task it marks "present" if any code in
-# the declared family is in scope for the task, "absent" if in-scope rows exist but
-# none matches, with coverage / values / evidence / observation / derivation
-# artifacts. The caller resolves the PHYSICAL columns from the source's roles:
+# Neutral structured executor behind a run_variable() code channel over a coded
+# source (for example CIM-10 / pmsi$diag or CCAM / pmsi$actes). Per task it marks
+# "present" if any code in the declared family is in scope and "absent" if
+# in-scope rows exist but none matches, with coverage / values / evidence /
+# observation artifacts. The caller resolves the PHYSICAL columns from the
+# source's roles:
 # `code_col` holds the code; `start_col`/`end_col` the time interval (a point-dated
 # source passes one date for both). `match` is exact (a code set) or regex. `field` /
 # `source` name the output rows; `codes` is the declared family (no concept baked in).
@@ -481,38 +482,12 @@ measure_code_presence <- function(source_table, tasks, codes,
                 "%s (%s)", .data[[code_col]], .data$.ee_t_start)) %>%
         select(all_of(evidence_columns))
 
-    rule <- if (windowed) {
-        sprintf("same_subject; interval_overlap[%g,%+g]; %s match {%s}",
-                from_days, to_days, match,   # %g: c(-Inf, 0) legal
-                paste(codes, collapse = ","))
-    } else {
-        sprintf("whole_history; %s match {%s}", match, paste(codes, collapse = ","))
-    }
-    if (!is.null(filter_rows)) {
-        rule <- sprintf("%s; rows kept when predicate holds", rule)
-    }
-    if (!is.null(filter_groups)) {
-        rule <- sprintf("%s; group(%s) kept when predicate holds",
-                        rule, group_by)
-    }
-    derivation <- coverage %>%
-        transmute(
-            task_id,
-            field = field,
-            rule = rule,
-            n_source_rows,
-            n_scope_rows,
-            n_matching_rows,
-            status = processing_state,
-            error = NA_character_)
-
     list(
         coverage = coverage,
         values = values,
         candidates = candidates,
         evidence = evidence,
-        observations = observations,
-        derivation = derivation)
+        observations = observations)
 }
 
 # --- generic document presence: metadata-selected docs_index rows ---------------
@@ -642,37 +617,12 @@ measure_doc_presence <- function(docs_index, tasks, filters,
                 "%s (%s)", filter_txt, .data$.ee_doc_date)) %>%
         select(all_of(evidence_columns))
 
-    rule <- if (windowed) {
-        sprintf("same_subject; point_window[%g,%+g]; %s", from_days, to_days,
-                filter_txt)
-    } else {
-        sprintf("whole_history; %s", filter_txt)
-    }
-    if (!is.null(filter_rows)) {
-        rule <- sprintf("%s; rows kept when predicate holds", rule)
-    }
-    if (!is.null(filter_groups)) {
-        rule <- sprintf("%s; group(%s) kept when predicate holds",
-                        rule, group_by)
-    }
-    derivation <- coverage %>%
-        transmute(
-            task_id,
-            field = field,
-            rule = rule,
-            n_source_rows,
-            n_scope_rows,
-            n_matching_rows,
-            status = processing_state,
-            error = NA_character_)
-
     list(
         coverage = coverage,
         values = values,
         candidates = candidates,
         evidence = evidence,
-        observations = observations,
-        derivation = derivation)
+        observations = observations)
 }
 
 # --- generic analyte candidates: selected prepared rows in a point-window -------
@@ -813,40 +763,10 @@ measure_analyte_values <- function(source_table, tasks, analytes,
                 "%s on %s", .data$.ee_analyte, .data$.ee_point_date)) %>%
         select(all_of(evidence_columns))
 
-    filter_txt <- paste0(
-        if (!is.null(filter_rows)) {
-            sprintf("row kept when %s; ", .one_line(filter_rows))
-        } else "",
-        if (!is.null(filter_groups)) {
-            sprintf("group(%s) kept when %s; ", group_by,
-                    .one_line(filter_groups))
-        } else "")
-    scope_txt <- paste(grain_keys, collapse = "+")
-    window_txt <- if (windowed) {
-        sprintf("point_window[%g,%+g]; ", from_days, to_days)
-    } else {
-        "event_scope (no window); "
-    }
-    rule <- sprintf(
-        paste0("grain=%s; %sanalyte=%s; %s",
-               "candidates preserve complete prepared-source rows"),
-        scope_txt, window_txt, paste(analytes, collapse = ","), filter_txt)
-    derivation <- coverage %>%
-        transmute(
-            task_id,
-            field = field,
-            rule = rule,
-            n_source_rows,
-            n_scope_rows,
-            n_candidate_rows,
-            status = processing_state,
-            error = NA_character_)
-
     list(
         coverage = coverage,
         values = values,
         candidates = candidates,
         evidence = evidence,
-        observations = observations,
-        derivation = derivation)
+        observations = observations)
 }

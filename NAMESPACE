@@ -2,7 +2,6 @@ import(corpustools)
 import(dplyr)
 import(stringr)
 
-export(act_channel)
 export(analyte)
 export(bin_output)
 export(ccam)

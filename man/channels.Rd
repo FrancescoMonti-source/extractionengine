@@ -1,6 +1,5 @@
 \name{code_channel}
 \alias{code_channel}
-\alias{act_channel}
 \alias{lab_channel}
 \alias{text_channel}
 \alias{doc_channel}
@@ -11,20 +10,13 @@
 \alias{analyte}
 \title{Declare source channels and selectors}
 \usage{
-code_channel(source, selector, native_grain = NA_character_,
-  required_roles = character())
+code_channel(source, selector, required_roles = character())
 
-act_channel(source, selector, native_grain = NA_character_,
-  required_roles = character())
+lab_channel(source = "biology", selector, required_roles = character())
 
-lab_channel(source = "biology", selector, native_grain = NA_character_,
-  required_roles = character())
+text_channel(selector, source = "documents", required_roles = character())
 
-text_channel(selector, source = "documents", native_grain = NA_character_,
-  required_roles = character())
-
-doc_channel(source, selector, native_grain = NA_character_,
-  required_roles = character())
+doc_channel(source, selector, required_roles = character())
 
 icd10(pattern, match = c("regex", "exact"))
 
@@ -42,7 +34,6 @@ analyte(codes)
 registered source. Caller objects are bound through
 \code{run_variable(sources =)}.}
 \item{selector}{A selector compatible with the channel type.}
-\item{native_grain}{Optional descriptive native grain.}
 \item{required_roles}{Source roles the channel requires.}
 \item{pattern,codes}{Code values or analyte \code{TYPEANA} values.}
 \item{match}{Exact or regular-expression matching.}
@@ -52,9 +43,11 @@ registered source. Caller objects are bound through
 \value{A channel or selector specification.}
 \description{
 Channels locate possible signal rows. They do not choose the output payload or
-assign clinical meaning. \code{analyte()} selects rows by \code{TYPEANA} only;
-the prepared-source columns used by a deterministic result are referenced later
-inside \code{from_channel(value =)}.
+assign clinical meaning. \code{code_channel()} accepts selectors created by
+either \code{icd10()} or \code{ccam()}; the registered source determines the
+physical code and date columns. \code{analyte()} selects rows by
+\code{TYPEANA} only; the prepared-source columns used by a deterministic result
+are referenced later inside \code{from_channel(value =)}.
 }
 \details{
 Relational text eligibility and row/group filtering are variable-local execution

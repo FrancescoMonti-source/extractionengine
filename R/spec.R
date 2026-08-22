@@ -630,7 +630,6 @@ inspect.ee_channel <- function(x, ...) {
         list(type = x$type,
              source = x$source,
              selector = x$selector,
-             native_grain = x$native_grain,
              required_roles = x$required_roles),
         "ee_channel_inspection")
 }
@@ -792,7 +791,7 @@ print.ee_variable_spec <- function(x, ...) {
     selector <- channel_use$selector %||% original_selector
     expected_selector <- switch(
         channel_def$type,
-        code = "code", act = "code", lab = "analyte",
+        code = "code", lab = "analyte",
         text = "lucene_query", doc = "doc_meta")
     if (is.null(expected_selector) || !identical(selector$kind, expected_selector)) {
         stop("Activation '", name, "' selector kind '", selector$kind,
@@ -811,9 +810,7 @@ print.ee_variable_spec <- function(x, ...) {
             selector = selector,
             selector_source = if (is.null(channel_use$selector))
                 origin$origin_kind else "activation",
-            native_grain = channel_def$native_grain,
             required_roles = channel_def$required_roles,
-            produces = channel_def$produces,
             filter_rows = channel_use$filter_rows,
             group_by = channel_use$group_by,
             filter_groups = channel_use$filter_groups,
