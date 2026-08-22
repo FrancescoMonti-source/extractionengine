@@ -2244,3 +2244,23 @@ still. Both are outside this repository and were inspected but not modified.
 `tests/testthat/test-current-contracts.R`, `tools/differential-oracle/fixtures.R`,
 `README.md`, `DESIGN.md`, `PLAN.md`, `vignettes/structured-text-with-llm.Rmd`,
 `man/variable_spec.Rd`, `man/run_variable.Rd`, and this entry.
+
+## Desktop demo realigned through Phase 3b (2026-08-22)
+
+The canonical external demo at
+`C:\Users\franc\Desktop\demo extractionengine.R` now follows the current
+authoring and execution contracts. Concept ownership moved from
+`variable_spec(concept =)` to each named `use_channel(concept =)`, all 16
+activations declare `search_within`, and the five deterministic
+`from_channel(value =)` outputs declare their `ptype`. The structured-text
+example no longer declares model configuration in the variable: it constructs
+one Ollama Chat at execution and passes it to `run_variable(chat =)`. Its API
+sentinels and `snippet_ids` terminology were updated with the same changes.
+
+The deterministic path was sourced against this checkout with
+`options(extractionengine.demo_llm = FALSE, extractionengine.demo_n = 3L)`.
+All internal assertions passed for eight variables over three stays. The only
+warning was the existing `corpustools` whitespace-trimming notice; no patient
+identifier or clinical text was printed. The real LLM path was not executed.
+`demo extractionengine - recovered.R` remains untouched as an older recovery
+artifact.
