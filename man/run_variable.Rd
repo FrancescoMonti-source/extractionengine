@@ -48,11 +48,14 @@ published.
 
 \code{channel_status} contains one row per output task and activated channel. Its
 stable core identifies the output unit, variable, channel, and source.
-\code{selection_status} is exactly \code{matched}, \code{no_match}, or
-\code{unavailable}. \code{processing_status} is \code{not_required} for
-non-LLM channels; for \code{lucene_llm} it is exactly \code{completed},
-\code{not_called}, \code{invalid}, or \code{failed}. These are mechanical
-selection and processing states, not clinical interpretations.
+\code{selection_status} is exactly \code{matched}, \code{no_match},
+\code{unavailable}, or \code{not_executed}. \code{processing_status} is
+\code{not_required} for non-LLM channels; for \code{lucene_llm} it is exactly
+\code{completed}, \code{not_called}, \code{invalid}, or \code{failed}. Both
+fields read \code{not_executed} for a unit the activation did not run for: a
+payload activation that the combine does not reference runs only on the units
+the gate qualified, and those units carry no counts or lineage for it. These are
+mechanical selection and processing states, not clinical interpretations.
 
 Deterministic \code{values} contain the authored result without a derived
 \code{channel_coverage} label. A returned deterministic run completed; source

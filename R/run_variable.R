@@ -219,7 +219,8 @@
 # retrieval instead of always being handed candidates. The pre-retrieved form
 # still declares per-task document eligibility, which is the one fact a stored
 # query result cannot observe about itself.
-.resolve_text_inputs <- function(src, channel_def, variable, tasks, selector) {
+.resolve_text_inputs <- function(src, channel_def, variable, tasks, selector,
+                                 cohort_tasks = tasks) {
     if (is.list(src) && all(c("coverage", "candidates") %in% names(src))) {
         coverage <- src$coverage
         candidates <- src$candidates
@@ -238,7 +239,7 @@
             }
             candidates$task_id <- character()
         }
-        declared <- as.character(tasks$task_id)
+        declared <- as.character(cohort_tasks$task_id)
         supplied <- unique(c(as.character(coverage$task_id),
                              as.character(candidates$task_id)))
         supplied <- supplied[!is.na(supplied)]
@@ -248,8 +249,16 @@
                  " task(s) outside the declared cohort.", call. = FALSE)
         }
         .validate_pre_retrieved_text(
-            coverage, candidates, tasks, channel_def$required_roles,
+            coverage, candidates, cohort_tasks, channel_def$required_roles,
             channel_def$search_within)
+        # The caller declared its inputs against the whole cohort; this
+        # activation may have been deferred behind a gate and run on fewer
+        # tasks.
+        executed <- as.character(tasks$task_id)
+        coverage <- coverage[
+            as.character(coverage$task_id) %in% executed, , drop = FALSE]
+        candidates <- candidates[
+            as.character(candidates$task_id) %in% executed, , drop = FALSE]
         windowed <- .apply_pre_retrieved_text_window(
             coverage, candidates, tasks, channel_def$window)
         # A pre-retrieved input is a stored query result, not an enumerable
@@ -629,8 +638,12 @@
 }
 
 # Dispatch by channel TYPE. Each branch wraps an existing tested executor.
+# `tasks` is what this activation executes on, which is a subset of
+# `cohort_tasks` when the gate deferred it. Caller-supplied inputs are declared
+# against the whole cohort, so they are validated there and restricted here.
 .run_selected_channel <- function(variable, channel_name, tasks, sources,
-                                  chat, grain_keys = "PATID") {
+                                  chat, grain_keys = "PATID",
+                                  cohort_tasks = tasks) {
     channel_def <- .channel_def(variable, channel_name)
     # Activation may locally override the concept's baseline selector (DESIGN §14.3):
     # use_channel(selector = ...) replaces the inherited selector for THIS variable
@@ -720,7 +733,8 @@
         text = {
             method <- channel_def$method
             text_inputs <- .resolve_text_inputs(sources[[source]], channel_def,
-                                                 variable, tasks, selector)
+                                                 variable, tasks, selector,
+                                                 cohort_tasks)
             text_inputs <- .filter_text_candidates(
                 text_inputs, tasks, channel_def$filter_rows,
                 channel_def$group_by, channel_def$filter_groups,
@@ -783,6 +797,13 @@
     candidate_counts <- .candidate_counts_for_tasks(result, task_ids)
     selection_status <- ifelse(candidate_counts > 0L, "matched", "no_match")
     selection_status[!eligible] <- "unavailable"
+
+    # An activation the gate excluded never ran for that task. Reporting
+    # `no_match` or `unavailable` there would describe a search that did not
+    # happen, so the skip is published as the operational fact it is.
+    not_executed <- !.activation_executed(result, task_ids)
+    selection_status[not_executed] <- "not_executed"
+    processing_status[not_executed] <- "not_executed"
 
     tibble::tibble(
         task_id = task_ids,
@@ -1288,7 +1309,8 @@
     dplyr::distinct(universe)
 }
 
-.hit_set_expr_variable <- function(variable, tasks, channel_results, roster) {
+.hit_set_expr_variable <- function(variable, tasks, channel_results, roster,
+                                   run_deferred = NULL) {
     var_name <- variable$name
     combine <- variable$combine
     declared <- names(channel_results)
@@ -1387,6 +1409,22 @@
         combine_keys <- relation
     }
 
+    # The gate is decided; a deferred payload activation now runs, on the
+    # qualifying tasks only. It rejoins the declared order so status, evidence,
+    # and audit read the same way whether or not it was deferred.
+    if (!is.null(run_deferred)) {
+        pending <- setdiff(names(variable$channels), declared)
+        if (length(pending) != 1L) {
+            stop("Exactly one activation can be deferred behind the gate; ",
+                 "found ", length(pending), ".", call. = FALSE)
+        }
+        channel_results[[pending]] <- run_deferred(task_ids[result %in% TRUE])
+        declared <- names(variable$channels)
+        reduced[[pending]] <- .deterministic_hits_for_tasks(
+            channel_results[[pending]], task_ids)
+        audit_vectors[[pending]] <- reduced[[pending]]$hit
+    }
+
     values <- tibble::tibble(
         task_id = task_ids, variable = var_name,
         value = as.integer(result))
@@ -1424,6 +1462,11 @@
 
 .channel_audit_counts <- function(variable, channel_name, result, task_ids) {
     channel <- variable$channels[[channel_name]]
+    # A task the activation never ran for has no counts, not zero counts: a zero
+    # would claim the engine looked and found nothing. `channel_status` carries
+    # the skip.
+    task_ids <- task_ids[task_ids %in% as.character(result$executed_tasks)]
+    if (!length(task_ids)) return(tibble::tibble())
     counts <- list()
     has_activation_filter <- !is.null(channel$filter_rows) ||
         !is.null(channel$filter_groups)
@@ -1888,27 +1931,56 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
     grain_keys <- .check_output_grain(variable, tasks)
     # Scoping rule (DESIGN §7): every activation declares whether it searches
     # within PATID or PATID + EVTID. Windows filter dates inside that relation.
-    channel_results <- lapply(names(variable$channels), function(channel_name) {
+    run_channel <- function(channel_name, channel_tasks) {
         scope_keys <- .channel_scope_keys(
             .channel_def(variable, channel_name), tasks)
         result <- .run_selected_channel(
-            variable, channel_name, tasks, sources,
+            variable, channel_name, channel_tasks, sources,
             channel_chats[[channel_name]],
-            grain_keys = scope_keys)
+            grain_keys = scope_keys, cohort_tasks = tasks)
+        result$executed_tasks <- as.character(channel_tasks$task_id)
         result$lineage_stages <- names(result$lineage_inputs)
         result$lineage <- .build_channel_lineage(
             variable, channel_name, result)
         result$lineage_inputs <- NULL
         result
-    })
-    names(channel_results) <- names(variable$channels)
+    }
 
     combine <- variable$combine
-    if (inherits(combine, "ee_combiner") &&
-        identical(combine$kind, "hit_set_expr")) {
+    gated <- inherits(combine, "ee_combiner") &&
+        identical(combine$kind, "hit_set_expr")
+    # A payload activation that the combine does not reference contributes
+    # nothing to the gate, so running it for a task the gate excludes is work
+    # whose result is discarded -- one model call per excluded task on the LLM
+    # path. It waits for the gate and then runs on the qualifying tasks only.
+    # A payload activation that IS referenced defines the gate and must run
+    # first, for every task.
+    deferred <- if (gated &&
+                    identical(variable$output$kind, "from_channel") &&
+                    !variable$output$channel %in% combine$channels) {
+        variable$output$channel
+    } else {
+        NULL
+    }
+    eager <- setdiff(names(variable$channels), deferred)
+    channel_results <- lapply(eager, run_channel, channel_tasks = tasks)
+    names(channel_results) <- eager
+
+    if (gated) {
         # Multi-channel hit-set algebra gates tasks/keys. bin_output() publishes
         # membership; from_channel() publishes a separately named payload alias.
-        out <- .hit_set_expr_variable(variable, tasks, channel_results, roster)
+        run_deferred <- if (is.null(deferred)) NULL else {
+            function(qualified_task_ids) {
+                result <- run_channel(
+                    deferred,
+                    tasks[as.character(tasks$task_id) %in% qualified_task_ids,
+                          , drop = FALSE])
+                channel_results[[deferred]] <<- result
+                result
+            }
+        }
+        out <- .hit_set_expr_variable(
+            variable, tasks, channel_results, roster, run_deferred)
         if (identical(variable$output$kind, "from_channel")) {
             payload_channel <- .channel_def(variable, variable$output$channel)
             out <- if (identical(payload_channel$method, "lucene_llm")) {

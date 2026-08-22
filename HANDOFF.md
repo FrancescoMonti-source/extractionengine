@@ -2644,3 +2644,75 @@ invisible unit.
 `R/channel-combine.R`, `R/retrieval.R`, `R/lineage.R`, `R/globals.R`,
 `tests/testthat/test-current-contracts.R`, `NEWS.md`, `README.md`, `DESIGN.md`,
 `man/run_variable.Rd`, and this entry.
+
+## Phase 4.5 lazy payload: the gate decides before the payload runs (2026-08-23)
+
+**Boundary.** The last Phase 4 slice, and defect E. It changes when an
+activation runs, not what any activation computes.
+
+**Change.** A payload activation named by `from_channel()` and **not** referenced
+by `combine_channels()` contributes nothing to the qualifying decision, so it
+now waits for the gate and runs only on the tasks the gate qualified. A payload
+activation the combine **does** reference defines the gate and still runs first,
+over every task. The deferral lives in `.hit_set_expr_variable()`, the only
+place that knows the gate: it runs the pending activation the moment the
+membership vector exists, then rejoins it in declared order so status, evidence,
+and audit read the same as if it had never been deferred.
+
+**Why this needed the relational core first.** Restricting an activation is now
+just passing it fewer tasks, and the result records which tasks it ran for. That
+was not expressible while a per-task state frame had to be total over the cohort:
+a `coverage` row was owed for every task, so an activation could not decline to
+answer for one. Removing the state frame in 4.4 is what made the restriction a
+subtraction instead of a new mode.
+
+**The skip is published, not hidden.** An excluded task reports
+`selection_status` and `processing_status` as `not_executed` and carries no
+`audit$counts` and no `audit$lineage` rows for that channel. A zero count there
+would claim a search that never happened, and `no_match` would claim a selection
+that was never evaluated.
+
+**A boundary the sentinel found, not the design.** Pre-retrieved text inputs are
+declared against the whole cohort, but a deferred activation runs on a subset,
+and the input validator rejected the cohort's own tasks as "outside the declared
+cohort". Validation now happens against the cohort and the restriction after it:
+`.run_selected_channel()` takes both the tasks it executes and the tasks the run
+declared. The first version of this slice passed the test suite and failed this
+case; the sentinel is the only reason it surfaced.
+
+**Eligibility became execution-aware.** `.activation_eligibility()` reports a
+task the activation never ran for as ineligible, so its hit stays `NA` rather
+than becoming an observed `FALSE`; `channel_status` is what distinguishes "no
+universe to search" from "not run". `.activation_executed()` fails loudly on a
+result that does not record its executed tasks, so the fact cannot be omitted by
+a future executor.
+
+**Measured.** 2 000 tasks, a gate qualifying 10 % of them, deterministic
+payload: payload lineage rows fall 6 000 -> 600, the returned result 4.70 ->
+4.10 MB, elapsed 3.86 s -> 3.77 s. The time is unchanged within noise, which is
+the honest result: the Phase 1 profile already showed the structured executor is
+~2 % of a run. The saving that matters is the model: on the LLM path the call
+count goes from one per task with candidates to one per **qualifying** task.
+
+**Sentinels.** A new test block runs a gated payload twice. The deterministic
+case proves that a task owning a payload row the selector would have matched is
+skipped when the gate excludes it, publishes `not_executed`, and gets no counts
+or lineage, while the qualifying task publishes its value unchanged. The LLM
+case gives both tasks a retrieved snippet, qualifies one, and asserts that
+exactly **one** model call was made.
+
+**Verification.** All 78 current-contract expectations pass with no warnings.
+The seven Phase 0 differential cases are unchanged from `after-realign.rds`.
+A full source build creates both vignettes, and `R CMD check --no-manual
+--no-build-vignettes` finishes with `Status: 1 NOTE`, the pre-existing `NEWS.md`
+heading. No real model call was made.
+
+**Phase 4 is complete.** What remains are the two decisions the plan deferred to
+the end of the phase: measuring lineage growth on a real profile, and whether
+the incomplete-roster guard can be relaxed for expressions that cannot qualify
+an invisible unit.
+
+**Files changed.** `R/run_variable.R`, `R/lineage.R`,
+`tests/testthat/test-current-contracts.R`, `NEWS.md`, `README.md`, `DESIGN.md`,
+`man/run_variable.Rd`, `vignettes/getting-started.Rmd`,
+`vignettes/structured-text-with-llm.Rmd`, `PLAN.md`, and this entry.

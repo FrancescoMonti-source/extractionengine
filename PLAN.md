@@ -666,7 +666,7 @@ Assorbe: il roster vero, il runtime quadratico, la memoria ~9×, e l'esecuzione
 pigra del payload (che richiede di limitare l'esecuzione a livello di singola
 chiave, cosa che l'interfaccia attuale degli esecutori non permette).
 
-**Stato — quattro fette su cinque completate (2026-08-23):**
+**Stato — cinque fette su cinque completate (2026-08-23):**
 
 - il roster source-qualified viene costruito una volta dai frame preparati della
   run e alimenta già l'universo dei combine più fini dell'output. La restrizione
@@ -701,7 +701,17 @@ perdere il confine pre/post filtro. L'unico fatto dichiarato invece che
 osservato resta l'eleggibilità dei testi pre-recuperati. *[misurato]* 286 righe
 cancellate contro 170 aggiunte sotto `R/`.
 
-Resta da rendere pigro il payload: **la Fase 4 non è chiusa**.
+La quinta fetta ha reso pigro il payload (difetto E). Un'attivazione di payload
+che il combine non referenzia non contribuisce alla decisione, quindi aspetta il
+gate e gira solo sui task qualificati; una che il combine referenzia definisce il
+gate e gira per prima su tutti. Lo skip è pubblicato come `not_executed` nelle
+due colonne di stato, senza conteggi né lineage per quel canale: uno zero
+sosterrebbe una ricerca mai avvenuta. *[misurato]* su 2 000 task con un gate al
+10 %: righe di lineage del payload da 6 000 a 600, risultato da 4,70 a 4,10 MB,
+tempo invariato entro il rumore — il guadagno vero è sul modello, dove le
+chiamate passano da una per task con candidati a una per task **qualificato**.
+
+**La Fase 4 è chiusa.** Restano soltanto le due decisioni di fine fase.
 
 **Quattro cose da fare bene:**
 
@@ -907,9 +917,9 @@ tutto il resto: si possono fare in qualsiasi ordine. Il punto 1.10 deve preceder
 la prima preparazione costosa delle sorgenti; 1.4 è una dichiarazione di confine,
 non plumbing da coordinare con 1.3.
 
-**Stato al 2026-08-23.** Fasi 0, 1, 2, 3 e 3b sono committate sul ramo
-`phase-0-cleanup`, che non è ancora entrato in `master`; la Fase 4 è a quattro
-fette su cinque. Con 1.3 chiuso **non resta nessun difetto conosciuto che
-pubblichi un valore falso**. Il lavoro aperto è l'ultima fetta della Fase 4 —
-rendere pigro il payload (difetto E) — più le due decisioni di fine fase
-(crescita della lineage sul profilo vero, guardia sul roster incompleto).
+**Stato al 2026-08-23.** Fasi 0, 1, 2, 3, 3b e 4 sono committate sul ramo
+`phase-0-cleanup`, che non è ancora entrato in `master`. **Non resta nessun
+difetto conosciuto che pubblichi un valore falso**, e tutti gli undici difetti
+della Parte 2 sono chiusi. Restano le due decisioni di fine Fase 4 (crescita
+della lineage sul profilo vero, guardia sul roster incompleto) e l'intera
+Fase 5.

@@ -400,13 +400,23 @@ only the snippets it cited, marked as `evidence_kind = "llm_citation"`; its
 stable core identifies the output unit, variable, channel, and source, then
 records two independent controlled fields:
 
-- `selection_status` is `matched`, `no_match`, or `unavailable`: respectively,
-  one or more candidates survived activation selection, selection completed
-  with no surviving candidate, or no reliable selection could be made;
+- `selection_status` is `matched`, `no_match`, `unavailable`, or
+  `not_executed`: respectively, one or more candidates survived activation
+  selection, selection completed with no surviving candidate, no reliable
+  selection could be made, or the activation did not run for this unit at all;
 - `processing_status` is `not_required` for non-LLM channels. For
   `lucene_llm`, it is `completed`, `not_called`, `invalid`, or `failed`:
   respectively a valid grounded response, no model invocation, an unusable
-  returned response, or a call/processing failure.
+  returned response, or a call/processing failure. Both fields read
+  `not_executed` together when the activation did not run.
+
+An activation named by `from_channel()` but not referenced by
+`combine_channels()` contributes nothing to the qualifying decision, so it runs
+only for the units the combine qualified: its payload for an excluded unit would
+be discarded, and on the LLM path that discarded work is a model call. Those
+units publish `not_executed` and carry no counts or lineage for that channel. An
+activation the combine does reference decides the gate and always runs first,
+for every unit.
 
 Deterministic `values` contain the authored result, not a derived
 `channel_coverage` label. A returned deterministic run completed; whether rows

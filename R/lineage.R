@@ -235,18 +235,39 @@
     .lineage_reached_counts(result, task_ids, "pre_selector", NULL) > 0L
 }
 
+# Which tasks this activation actually ran for. A payload activation deferred
+# behind a gate runs only on the tasks the gate qualified; every other
+# activation runs on the whole cohort.
+.activation_executed <- function(result, task_ids) {
+    executed <- result$executed_tasks
+    if (is.null(executed)) {
+        stop("Channel result does not record which tasks it executed.",
+             call. = FALSE)
+    }
+    as.character(task_ids) %in% as.character(executed)
+}
+
 # Eligibility is observed wherever the source can be enumerated. A pre-retrieved
 # text input cannot be: it is a stored query result, so its caller declares the
 # same fact and the engine reads it here instead of inferring it from silence.
+# An activation that never ran for a task had no universe to search there
+# either, so it is reported ineligible and its hit stays NA; `channel_status`
+# says which of the two happened.
 .activation_eligibility <- function(result, task_ids) {
+    executed <- .activation_executed(result, task_ids)
     declared <- result$declared_eligibility
-    if (is.null(declared)) return(.lineage_task_eligibility(result, task_ids))
-    index <- match(as.character(task_ids), as.character(declared$task_id))
+    if (is.null(declared)) {
+        return(.lineage_task_eligibility(result, task_ids) & executed)
+    }
+    index <- match(as.character(task_ids)[executed],
+                   as.character(declared$task_id))
     if (anyNA(index)) {
         stop("Declared text eligibility must cover every task_id.",
              call. = FALSE)
     }
-    as.logical(declared$eligible[index])
+    eligible <- rep(FALSE, length(task_ids))
+    eligible[executed] <- as.logical(declared$eligible[index])
+    eligible
 }
 
 .build_audit_lineage <- function(channel_results) {

@@ -444,9 +444,11 @@ results$ionic_alert_by_stay$channel_status |>
   select(PATID, EVTID, channel, selection_status, processing_status)
 ```
 
-`selection_status` is `matched`, `no_match`, or `unavailable`. The first two say
-that selection could be evaluated and did or did not retain candidates; the
-third says that no reliable selection was possible. These deterministic channels
+`selection_status` is `matched`, `no_match`, `unavailable`, or `not_executed`.
+The first two say that selection could be evaluated and did or did not retain
+candidates; the third says that no reliable selection was possible; the fourth
+says the activation did not run for that unit, which happens when a combine gate
+excluded it and the payload would have been discarded. These deterministic channels
 need no model-processing stage, so `processing_status = "not_required"`. An LLM
 channel instead uses `completed`, `not_called`, `invalid`, or `failed`. None of
 these labels is a clinical interpretation.

@@ -305,6 +305,7 @@ The two status columns answer different questions:
 | no eligible document | `unavailable` | `not_called` | the retrieval boundary could not ascertain candidate presence |
 | candidate but ungrounded response | `matched` | `invalid` | the call returned a structured response, but citation grounding did not permit publication |
 | candidate but call or parsing failed | `matched` | `failed` | retrieval succeeded, but model transport or response processing failed |
+| excluded by the combine gate | `not_executed` | `not_executed` | the payload activation never ran for this unit, so no call was made and none would have been published |
 
 These are mechanical execution states, not clinical labels. In particular,
 `no_match` means *no excerpt matched the authored retrieval rule*, not *no allergy*.

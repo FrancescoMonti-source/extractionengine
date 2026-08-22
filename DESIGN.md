@@ -241,10 +241,20 @@ contract is revised.
 
 `channel_status` has one row per output unit and activated channel. Its stable
 core identifies output unit, variable, channel, and source. `selection_status`
-is exactly `matched`, `no_match`, or `unavailable`. `processing_status` is
-`not_required` for non-LLM channels; for `lucene_llm` it is exactly `completed`,
-`not_called`, `invalid`, or `failed`. Selection and model processing are separate
-axes and neither label carries a clinical interpretation.
+is exactly `matched`, `no_match`, `unavailable`, or `not_executed`.
+`processing_status` is `not_required` for non-LLM channels; for `lucene_llm` it
+is exactly `completed`, `not_called`, `invalid`, or `failed`, and both fields
+read `not_executed` when the activation did not run for that unit. Selection and
+model processing are separate axes and neither label carries a clinical
+interpretation.
+
+A payload activation named by `from_channel()` and not referenced by the combine
+runs only on the units the gate qualified. Its result for an excluded unit would
+be discarded, and on the LLM path that discarded work is one model call per
+excluded unit. The skip is published as `not_executed`; the excluded unit gets
+no counts and no lineage for that channel, because a zero there would claim a
+search that never happened. An activation the combine references defines the
+gate and therefore always runs first, over every unit.
 
 Public evidence retains source-specific prepared-row columns and classifies each
 row with `evidence_kind = "source_row"`, `"lucene_hit"`, or

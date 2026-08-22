@@ -155,7 +155,7 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
     expect_error(
         getFromNamespace(".channel_status_rows", "extractionengine")(
             resolve_variable_spec(numeric_variable), "result",
-            list(candidates = tibble::tibble()), "P1"),
+            list(candidates = tibble::tibble(), executed_tasks = "P1"), "P1"),
         "missing its activation lineage")
 
 
@@ -975,8 +975,127 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
         ".activation_eligibility", "extractionengine")
     expect_error(
         activation_eligibility(
-            list(declared_eligibility = tibble::tibble(
-                task_id = "P1", eligible = TRUE)),
+            list(
+                declared_eligibility = tibble::tibble(
+                    task_id = "P1", eligible = TRUE),
+                executed_tasks = c("P1", "P2")),
             c("P1", "P2")),
         "must cover every task_id")
+})
+
+test_that("a gated payload activation runs only for qualifying tasks", {
+    biology <- tibble::tibble(
+        PATID = c("P1", "P1", "P2", "P2"),
+        EVTID = c("E1", "E1", "E2", "E2"),
+        ELTID = paste0("L", 1:4),
+        DATEXAM = as.Date("2026-02-01"),
+        TYPEANA = c("A", "HB.HB", "OTHER", "HB.HB"),
+        NUMRES = c(1, 10, 1, 20),
+        STRRES = NA_character_)
+    marker <- concept_spec(
+        "marker", channels = list(a = lab_channel(selector = analyte("A"))))
+    hemoglobin <- concept_spec(
+        "hemoglobin",
+        channels = list(h = lab_channel(selector = analyte("HB.HB"))))
+    cohort <- tibble::tibble(PATID = c("P1", "P2"))
+    gate_channels <- list(
+        gate_a = use_channel("a", concept = marker, search_within = "PATID"),
+        gate_b = use_channel("a", concept = marker, search_within = "PATID"))
+
+    deterministic <- run_variable(
+        variable_spec(
+            name = "gated_payload",
+            channels = c(gate_channels, list(
+                payload = use_channel(
+                    "h", concept = hemoglobin, search_within = "PATID"))),
+            combine = combine_channels("gate_a & gate_b", by = "PATID"),
+            output = from_channel(
+                "payload", group_by = "PATID", value = mean(NUMRES),
+                ptype = double())),
+        cohort, sources = list(biology = biology))
+
+    # P2 owns a payload row the selector would have matched, but the gate
+    # excludes P2, so the activation never runs there. The skip is published as
+    # what it is instead of being reported as a search that found nothing.
+    expect_identical(deterministic$values$value, c(10, NA_real_))
+    payload_status <- deterministic$channel_status[
+        deterministic$channel_status$channel == "payload", ]
+    expect_identical(
+        payload_status$selection_status[
+            match(c("P1", "P2"), payload_status$PATID)],
+        c("matched", "not_executed"))
+    expect_identical(
+        unique(deterministic$audit$lineage$PATID[
+            deterministic$audit$lineage$channel == "payload"]),
+        "P1")
+    expect_false(any(
+        deterministic$audit$counts$channel == "payload" &
+        deterministic$audit$counts$PATID == "P2" &
+        deterministic$audit$counts$stage %in% c("pre_selector", "selector")))
+
+    # The same rule is what keeps a gated model activation from being called for
+    # every task and discarded: both tasks have a retrieved snippet, only one
+    # qualifies, and exactly one model call is made.
+    response <- ellmer::type_object(
+        "Extraction structurée du statut tabagique.",
+        statut_tabagique = ellmer::type_enum(
+            c("fumeur", "non_fumeur"),
+            "Statut explicitement documenté."))
+    smoking <- concept_spec(
+        "tabagisme",
+        channels = list(text = text_channel(selector = lucene_query("taba*"))))
+    documents <- list(
+        coverage = tibble::tibble(
+            task_id = c("P1", "P2"), PATID = c("P1", "P2"),
+            coverage_state = "candidate"),
+        candidates = tibble::tibble(
+            task_id = c("P1", "P2"), snippet_id = c("S001", "S001"),
+            hit_ref = c("H001", "H002"), PATID = c("P1", "P2"),
+            EVTID = c("E1", "E2"), ELTID = c("D001", "D002"),
+            snippet_text = "Tabagisme actif documenté.",
+            hit_text = "Tabagisme actif", RECDATE = as.Date("2026-02-01"),
+            RECTYPE = "CR"))
+    calls <- new.env(parent = emptyenv())
+    calls$n <- 0L
+    testthat::local_mocked_bindings(
+        .chat_metadata = function(chat) list(
+            provider = "test", model = "fake", params = list(),
+            temperature = 0, seed = 1L, max_tokens = 100),
+        .call_chat = function(chat, prompt, type, system_prompt, metadata) {
+            calls$n <- calls$n + 1L
+            list(
+                status = "completed",
+                result = list(
+                    statut_tabagique = "fumeur", snippet_ids = "S001"),
+                error = NA_character_, n_tries = 1L, errors = character(),
+                started_at = Sys.time(), latency_ms = 0,
+                partial_response = NA_character_, output_tokens = 10,
+                inferred_finish_reason = "stop")
+        },
+        .package = "extractionengine")
+
+    gated_llm <- run_variable(
+        variable_spec(
+            name = "gated_llm_payload",
+            channels = c(gate_channels, list(
+                text_tabagisme = use_channel(
+                    channel = "text", concept = smoking,
+                    search_within = "PATID", method = "lucene_llm",
+                    response = response, rationale = FALSE))),
+            combine = combine_channels("gate_a & gate_b", by = "PATID"),
+            output = from_channel("text_tabagisme", group_by = "PATID")),
+        cohort,
+        sources = list(biology = biology, documents = documents),
+        chat = structure(list(), class = "fake"))
+
+    expect_identical(
+        list(
+            calls = calls$n,
+            published = gated_llm$values$statut_tabagique,
+            status = gated_llm$channel_status$selection_status[
+                gated_llm$channel_status$channel == "text_tabagisme"]),
+        list(
+            calls = 1L,
+            published = c("fumeur", NA_character_),
+            status = c("matched", "not_executed")))
 })

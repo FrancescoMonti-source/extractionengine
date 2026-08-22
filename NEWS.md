@@ -67,6 +67,18 @@ migration.
   relation with one row per activation artifact. **Migration:** query
   `audit$lineage` instead. It carries coordinates, never source payload.
 
+* A payload activation named by `from_channel()` but not referenced by
+  `combine_channels()` now runs only for the units the combine qualified. Its
+  result for an excluded unit was computed and then discarded; on the LLM path
+  that discarded work was one model call per excluded unit. Published values are
+  unchanged. Excluded units now report `selection_status` and
+  `processing_status` as `not_executed`, and carry no `audit$counts` rows and no
+  `audit$lineage` rows for that channel, because a zero count there would claim
+  a search that never happened. **Migration:** none for values; read
+  `not_executed` if you relied on every task having selection rows for every
+  channel. An activation the combine references still defines the gate and runs
+  for every unit.
+
 * `channel_status$selection_status` reports `unavailable` for a task whose
   documents are all outside the searchable corpus. This is reachable only
   through a caller-supplied `list(corpus =, docs_index =)` bundle whose index
