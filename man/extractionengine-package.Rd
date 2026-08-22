@@ -5,7 +5,8 @@
 \title{Auditable execution of study variable definitions}
 \description{
 \pkg{extractionengine} executes explicit operational definitions over prepared
-EDSAN views and keeps values, source coverage, evidence, and provenance together.
+EDSAN views and keeps values, operational selection facts, evidence, and
+provenance together.
 The researcher remains responsible for scientific and clinical correctness.
 }
 \details{

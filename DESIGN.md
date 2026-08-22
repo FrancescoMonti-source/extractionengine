@@ -13,7 +13,7 @@ The responsibility split is:
 - researcher-owned code: concepts, selectors, thresholds, windows, value expressions,
   model schemas, and interpretation;
 - `extractionengine`: compile the definition, select eligible evidence, execute
-  it, and preserve values, coverage, evidence, and provenance;
+  it, and preserve values, operational selection facts, evidence, and provenance;
 - `ellmer`: model-provider transport and structured responses.
 
 The package is experimental. Contract clarity takes precedence over backward
@@ -219,9 +219,12 @@ fresh task clone.
 
 `run_variable()` exposes exactly four top-level components: `values`,
 `channel_status`, `evidence`, and `audit`. Published frames use native grain keys
-while composite task identifiers remain internal. Coverage is separate from
-value. Hit-set combination reports partial or failed channel coverage without
-silently changing the observed decision.
+while composite task identifiers remain internal. Deterministic `values` contain
+the authored result without a derived `channel_coverage` label: a returned run
+completed, while unavailable sources, empty selections, and row counts remain
+observable in `channel_status`, evidence, and `audit$counts`. Whole-frame LLM
+outputs retain their existing coverage and review fields until that separate
+contract is revised.
 
 `channel_status` has one row per output unit and activated channel. Its stable
 core identifies output unit, variable, channel, and source. `selection_status`

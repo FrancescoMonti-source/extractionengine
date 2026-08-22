@@ -54,6 +54,13 @@ non-LLM channels; for \code{lucene_llm} it is exactly \code{completed},
 \code{not_called}, \code{invalid}, or \code{failed}. These are mechanical
 selection and processing states, not clinical interpretations.
 
+Deterministic \code{values} contain the authored result without a derived
+\code{channel_coverage} label. A returned deterministic run completed; source
+availability, empty selections, and row counts remain visible in
+\code{channel_status}, \code{evidence}, and \code{audit$counts}. Whole-frame LLM
+outputs retain their existing coverage and review fields until that separate
+contract is revised.
+
 \code{audit} contains a long \code{counts} table (grain keys, \code{channel},
 \code{stage}, \code{unit}, \code{n}), \code{llm_calls}, and a resolved
 \code{execution_manifest}. Controlled stages are \code{pre_selector},

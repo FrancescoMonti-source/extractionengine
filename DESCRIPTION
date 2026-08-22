@@ -11,9 +11,9 @@ Authors@R: c(
     )
   )
 Description: Executes explicit operational definitions of study variables over
-    prepared EDSAN views. It keeps values, source coverage, evidence, and
-    execution provenance together so that each result can be audited. Clinical
-    and scientific definitions remain the researcher's responsibility.
+    prepared EDSAN views. It keeps values, operational selection facts, evidence,
+    and execution provenance together so that each result can be audited.
+    Clinical and scientific definitions remain the researcher's responsibility.
 License: file LICENSE
 Encoding: UTF-8
 Imports:

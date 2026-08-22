@@ -5,10 +5,10 @@ result change for the same synthetic inputs? It is not an oracle of clinical
 truth and its fixtures carry no patient-derived data.
 
 The snapshot contains only the public `values`, `channel_status`, and `evidence`
-views needed by each case. Structured `channel_coverage`, audit internals,
-timestamps, latency, and raw model responses are deliberately excluded. Missing
-declared envelope columns are fatal; two empty, incompatible frames cannot
-compare green.
+views needed by each case. Deterministic `channel_coverage` is not part of that
+public contract; audit internals, timestamps, latency, and raw model responses
+are also excluded. Missing declared envelope columns are fatal; two empty,
+incompatible frames cannot compare green.
 
 The cases cover:
 

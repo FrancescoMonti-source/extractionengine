@@ -2173,3 +2173,39 @@ outside this repository.
 `tools/differential-oracle/fixtures.R`, `README.md`, `DESIGN.md`,
 `vignettes/getting-started.Rmd`, `man/operators.Rd`, `man/variable_spec.Rd`, and
 this entry.
+
+## Phase 3 deterministic results without channel coverage (2026-08-22)
+
+**Decision.** Deterministic execution publishes its value, operational
+`selection_status`, evidence, and counts without translating executor states into
+`values$channel_coverage`. A returned deterministic run completed; an execution
+error remains fail-fast and does not become an output row. The existing LLM
+whole-frame output is outside this phase and retains its current coverage/review
+fields.
+
+**Change.** Single-channel membership, deterministic `from_channel()`, gated
+payloads, hit-set combines, and `audit$overlap` no longer construct
+`complete`/`partial`/`failed` coverage labels. Deterministic membership reduces
+executor facts directly to observed TRUE/FALSE/NA hit vectors. The historical
+no-candidate status semantics are retained only inside the LLM membership
+reducer rather than leaking into deterministic assembly.
+
+**Closed executor relation.** Coverage must contain exactly one row for every
+declared task and no foreign task. Missing tasks now fail instead of becoming
+`no_eligible_source`; an unknown `processing_state` fails instead of falling
+through to `unavailable`. `channel_status$selection_status` remains public for
+the whole phase, as required by the plan.
+
+**Verification.** All 53 current-contract expectations pass, including the
+absence of deterministic `channel_coverage` and loud failure for missing tasks
+and unknown states. The four Phase 0 differential cases are unchanged against
+`after-phase2.rds`. A full source build creates both vignettes, and `R CMD check
+--no-manual --no-build-vignettes` finishes with `Status: OK`, including tests,
+documentation, and execution of both vignette sources. A static scan of adjacent
+local Git and Desktop project roots found no external R, Rmd, or qmd consumer of
+`channel_coverage`.
+
+**Files changed.** `DESCRIPTION`, `R/channel-combine.R`, `R/hitset.R`,
+`R/operators.R`, `R/run_variable.R`, `tests/testthat/test-current-contracts.R`,
+`tools/differential-oracle/README.md`, `README.md`, `DESIGN.md`,
+`man/extractionengine-package.Rd`, `man/run_variable.Rd`, and this entry.

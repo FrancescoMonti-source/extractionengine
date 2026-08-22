@@ -88,9 +88,9 @@ index_event <- function(source, selector, at = NULL,
 # symbols are checked against the variable's activated channels at variable_spec
 # build. The decision is OBSERVED hit-set algebra (a task is a member of a channel's
 # set iff hit == TRUE; FALSE and NA both mean "no observed hit"), so it is always
-# determined (included / excluded) -- an unavailable channel is reported via
-# channel_coverage, not propagated into the decision. The per-channel audit keeps the
-# raw TRUE/FALSE/NA. The pure parser/evaluator/overlap live in R/hitset.R.
+# determined (included / excluded). The overlap audit keeps raw TRUE/FALSE/NA
+# membership, while channel_status and audit counts retain operational selection
+# facts. The pure parser/evaluator/overlap live in R/hitset.R.
 combine_channels <- function(expr, by) {
     if (!is.character(expr) || length(expr) != 1L || is.na(expr) ||
         !nzchar(trimws(expr))) {

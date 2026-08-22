@@ -1,13 +1,11 @@
 # =============================================================================
-# channel-combine.R — per-channel reduction to the {status, hit} contract
+# channel-combine.R — task-keyed executor views and membership reduction
 # -----------------------------------------------------------------------------
-# Reduces ONE selected channel's coverage/value views to per-task status and hit
-# vectors consumed by the value assemblers in run_variable() -- the hit-set
-# expression evaluator (.hit_set_expr_variable) and the single-channel membership
-# assembler (.single_membership_variable). Evidence is published separately from
-# the executor result. The reducer maps the engine's processing_state vocabulary
-# (text OR structured) into a normalized {complete / unavailable / invalid / error}
-# status plus a three-valued hit (TRUE / FALSE / NA).
+# Reads ONE selected channel's coverage/value views as total task-keyed relations.
+# Deterministic assemblers consume only a three-valued observed hit
+# (TRUE / FALSE / NA); they do not translate executor facts into a public
+# completeness label. The legacy status reducer remains isolated to the LLM
+# membership path, whose contract is not rewritten in Phase 3.
 #
 # "source" is reserved for the warehouse/raw data source (e.g. pmsi_diag, documents,
 # biology); a channel reads FROM a source but is not the source. The only raw-source
@@ -16,10 +14,8 @@
 #
 # (The original OR collapse combine_any_channel_hit() -- the open-world
 # incomplete_value policy -- was removed once cross-channel combine became hit-set
-# algebra: that value is always 0/1 with the uncertainty on channel_coverage, never
-# an incomplete_value. The pre-spine diabetes orchestration helpers were likewise
-# subsumed by run_variable(); OR resilience is exercised at the spine, see
-# test-slice-diabetes-spec.R / test-slice-dialysis-spec.R.)
+# algebra. The pre-spine diabetes orchestration helpers were likewise subsumed by
+# run_variable().)
 # =============================================================================
 
 # Return the position of each declared task in a task-keyed executor view. The
@@ -49,10 +45,30 @@
 .states_for_tasks <- function(result, task_ids) {
     index <- .task_row_index(
         result$coverage, task_ids, "processing_state", "Channel coverage")
-    states <- rep("no_eligible_source", length(task_ids))
-    found <- !is.na(index)
-    states[found] <- as.character(result$coverage$processing_state[index[found]])
-    states
+    coverage_ids <- as.character(result$coverage$task_id)
+    task_ids <- as.character(task_ids)
+    missing_ids <- task_ids[is.na(index)]
+    unexpected_ids <- setdiff(coverage_ids, task_ids)
+    if (length(missing_ids) || length(unexpected_ids)) {
+        details <- c(
+            if (length(missing_ids)) {
+                paste0("missing: ", paste(missing_ids, collapse = ", "))
+            },
+            if (length(unexpected_ids)) {
+                paste0("unexpected: ", paste(unexpected_ids, collapse = ", "))
+            })
+        stop("Channel coverage must contain exactly one row for every task_id (",
+             paste(details, collapse = "; "), ").", call. = FALSE)
+    }
+    as.character(result$coverage$processing_state[index])
+}
+
+.check_processing_states <- function(states, allowed, context) {
+    unexpected <- unique(states[is.na(states) | !states %in% allowed])
+    if (!length(unexpected)) return(invisible(states))
+    labels <- ifelse(is.na(unexpected), "<NA>", unexpected)
+    stop(context, " returned unsupported processing_state value(s): ",
+         paste(labels, collapse = ", "), ".", call. = FALSE)
 }
 
 .accepted_values_for_tasks <- function(result, task_ids) {
@@ -65,29 +81,48 @@
     accepted
 }
 
-# Reduce one channel's coverage/value views to one ordered {task_id, status, hit}
-# table. Evidence is published directly from the executor result and does not
-# belong in this decision reducer.
-.reduce_channel_result <- function(
-    res,
-    task_ids,
-    no_candidate_status = c("complete", "unavailable")) {
-    no_candidate_status <- match.arg(no_candidate_status)
+# Reduce deterministic executor facts directly to observed membership. Missing
+# source rows remain NA in the audit vector; no selected candidate is FALSE.
+.deterministic_hits_for_tasks <- function(res, task_ids, channel_name) {
     states <- .states_for_tasks(res, task_ids)
+    allowed <- c(
+        "measured", "no_candidate", "no_eligible_source",
+        "no_eligible_document")
+    .check_processing_states(
+        states, allowed, paste0("Deterministic channel '", channel_name, "'"))
     accepted <- .accepted_values_for_tasks(res, task_ids)
 
-    status <- rep("unavailable", length(task_ids))
-    status[states %in% c("measured", "valid")] <- "complete"
-    status[states %in% "no_candidate"] <- no_candidate_status
-    status[states %in% "invalid"] <- "invalid"
+    hit <- rep(NA, length(task_ids))
+    measured <- states == "measured"
+    hit[measured] <- !is.na(accepted[measured]) &
+        accepted[measured] == "present"
+    hit[states == "no_candidate"] <- FALSE
+
+    tibble::tibble(
+        task_id = as.character(task_ids),
+        hit = hit)
+}
+
+# The LLM membership path still consumes the historical status vocabulary. Keep
+# that translation explicit and closed until the LLM contract is rewritten.
+.reduce_llm_channel_result <- function(res, task_ids) {
+    states <- .states_for_tasks(res, task_ids)
+    allowed <- c(
+        "valid", "no_candidate", "no_eligible_document", "not_called",
+        "invalid", "model_error", "processing_error")
+    .check_processing_states(states, allowed, "LLM channel")
+    accepted <- .accepted_values_for_tasks(res, task_ids)
+
+    status <- rep(NA_character_, length(task_ids))
+    status[states == "valid"] <- "complete"
+    status[states %in%
+        c("no_candidate", "no_eligible_document", "not_called")] <- "unavailable"
+    status[states == "invalid"] <- "invalid"
     status[states %in% c("model_error", "processing_error")] <- "error"
 
     hit <- rep(NA, length(task_ids))
-    complete <- states %in% c("measured", "valid")
-    hit[complete] <- !is.na(accepted[complete]) & accepted[complete] == "present"
-    if (identical(no_candidate_status, "complete")) {
-        hit[states %in% "no_candidate"] <- FALSE
-    }
+    hit[states == "valid"] <- !is.na(accepted[states == "valid"]) &
+        accepted[states == "valid"] == "present"
 
     tibble::tibble(
         task_id = as.character(task_ids),

@@ -781,16 +781,6 @@
              call. = FALSE))
 }
 
-.no_candidate_status <- function(channel_name, variable) {
-    channel <- .channel_def(variable, channel_name)
-    if (identical(channel$type, "text") &&
-        identical(channel$method, "lucene_llm")) {
-        "unavailable"
-    } else {
-        "complete"
-    }
-}
-
 # Public channel status separates two stages instead of publishing several
 # overlapping recodings of one executor state. Selection describes whether the
 # activation produced rows after selector + activation filters. Processing is the
@@ -810,15 +800,25 @@
     variable_name <- variable$name
     source_name <- .source_name_for_channel(channel_name, variable)
     states <- .states_for_tasks(result, task_ids)
+    channel <- .channel_def(variable, channel_name)
+    is_llm <- identical(channel$type, "text") &&
+        identical(channel$method, "lucene_llm")
+    allowed_states <- if (is_llm) {
+        c("no_eligible_document", "no_candidate", "not_called", "valid",
+          "invalid", "model_error", "processing_error")
+    } else {
+        c("no_eligible_source", "no_eligible_document", "no_candidate",
+          "measured")
+    }
+    .check_processing_states(
+        states, allowed_states, paste0("Channel '", channel_name, "'"))
     candidate_counts <- .candidate_counts_for_tasks(result, task_ids)
     selection_status <- ifelse(candidate_counts > 0L, "matched", "no_match")
     selection_status[states %in%
         c("no_eligible_source", "no_eligible_document")] <- "unavailable"
 
-    channel <- .channel_def(variable, channel_name)
     processing_status <- rep("not_required", length(task_ids))
-    if (identical(channel$type, "text") &&
-        identical(channel$method, "lucene_llm")) {
+    if (is_llm) {
         processing_status[] <- "not_called"
         processing_status[states %in% "valid"] <- "completed"
         processing_status[states %in% "invalid"] <- "invalid"
@@ -843,26 +843,35 @@
 
 # Single-channel binary membership (combine = NULL + binary output): the value IS
 # the channel's observed hit, as OBSERVED set algebra -- a task is a member iff
-# hit == TRUE, so both FALSE and NA give 0 and the value is always 0/1 (a degenerate
-# one-set hit-algebra; the open-world uncertainty rides on channel_coverage, never on
-# the value). Public channel_status reports selection and post-selection processing;
-# membership itself is published by values and, for combines, combine_keys/overlap.
+# hit == TRUE, so both FALSE and NA give 0 and the value is always 0/1. Public
+# channel_status reports selection and post-selection processing; deterministic
+# values do not translate those facts into a completeness label. The LLM
+# membership path retains its existing output until that contract is rewritten.
 .single_membership_variable <- function(variable, tasks, channel_name, result) {
     var_name <- variable$name
     source_name <- .source_name_for_channel(channel_name, variable)
-    no_candidate <- .no_candidate_status(channel_name, variable)
     task_ids <- as.character(tasks$task_id)
-    reduced <- .reduce_channel_result(result, task_ids, no_candidate)
-    coverage <- rep("partial", length(task_ids))
-    coverage[reduced$status == "complete"] <- "complete"
-    coverage[reduced$status == "error"] <- "failed"
+    channel <- .channel_def(variable, channel_name)
+    is_llm <- identical(channel$type, "text") &&
+        identical(channel$method, "lucene_llm")
+    reduced <- if (is_llm) {
+        .reduce_llm_channel_result(result, task_ids)
+    } else {
+        .deterministic_hits_for_tasks(result, task_ids, channel_name)
+    }
+    values <- tibble::tibble(
+        task_id = task_ids,
+        variable = var_name,
+        value = as.integer(reduced$hit %in% TRUE))
+    if (is_llm) {
+        coverage <- rep("partial", length(task_ids))
+        coverage[reduced$status == "complete"] <- "complete"
+        coverage[reduced$status == "error"] <- "failed"
+        values$channel_coverage <- coverage
+    }
 
     list(
-        values = tibble::tibble(
-            task_id = task_ids,
-            variable = var_name,
-            value = as.integer(reduced$hit %in% TRUE),
-            channel_coverage = coverage),
+        values = values,
         channel_status = .channel_status_rows(
             variable, channel_name, result, task_ids),
         # A retained qualitative qualifier may document a negative membership;
@@ -950,14 +959,6 @@
         })
 }
 
-.statuses_from_processing_states <- function(states) {
-    status <- rep("unavailable", length(states))
-    status[states %in% c("measured", "valid", "processed")] <- "complete"
-    status[states %in% "invalid"] <- "invalid"
-    status[states %in% c("model_error", "processing_error")] <- "error"
-    status
-}
-
 .hit_for_task <- function(result, task_id) {
     values <- result$values
     if (!is.data.frame(values) ||
@@ -1023,17 +1024,11 @@
         output = output,
         variable_name = variable$name,
         channel_name = channel_name)
-    processing <- .statuses_from_processing_states(
-        .states_for_tasks(result, task_ids))
-    channel_coverage <- rep("partial", length(task_ids))
-    channel_coverage[processing == "complete"] <- "complete"
-    channel_coverage[processing == "error"] <- "failed"
 
     values <- tibble::tibble(
         task_id = task_ids,
         variable = variable$name,
         value = .bind_scalar_values(value_rows, output$ptype),
-        channel_coverage = channel_coverage,
         n_payload_rows = n_payload_rows)
     status <- .channel_status_rows(variable, channel_name, result, task_ids)
     status$n_payload_rows <- n_payload_rows
@@ -1132,8 +1127,6 @@
 
     gate_task_ids <- as.character(gate$task_id)
     payload_rows <- .payload_rows_by_task(payload, gate_task_ids)
-    payload_status <- .statuses_from_processing_states(
-        .states_for_tasks(result, gate_task_ids))
     value_rows <- vector("list", nrow(gate))
     n_payload <- integer(nrow(gate))
     for (i in seq_len(nrow(gate))) {
@@ -1142,12 +1135,6 @@
             n_payload[[i]] <- nrow(task_rows)
             value_rows[[i]] <- .eval_from_channel_value(
                 task_rows, output, variable$name, channel_name)
-            if (payload_status[[i]] == "error") {
-                gate$channel_coverage[[i]] <- "failed"
-            } else if (payload_status[[i]] != "complete" &&
-                       gate$channel_coverage[[i]] != "failed") {
-                gate$channel_coverage[[i]] <- "partial"
-            }
         } else {
             value_rows[[i]] <- vctrs::vec_init(output$ptype, 1L)
         }
@@ -1226,18 +1213,6 @@
           "citation_warning", "review_reason", ".qualifies"))
     excluded <- !values$.qualifies %in% 1L
     for (column in authored) values[[column]][excluded] <- .typed_na(values[[column]])
-    included <- !excluded
-    combine_coverage <- out$values$channel_coverage[
-        match(values$task_id, out$values$task_id)]
-    payload_coverage <- values$channel_coverage
-    values$channel_coverage <- combine_coverage
-    values$channel_coverage[included &
-        (combine_coverage == "failed" | payload_coverage == "failed")] <- "failed"
-    values$channel_coverage[included &
-        values$channel_coverage != "failed" &
-        (combine_coverage == "partial" | payload_coverage == "partial")] <- "partial"
-    values$channel_coverage[included &
-        combine_coverage == "complete" & payload_coverage == "complete"] <- "complete"
     values$.qualifies <- NULL
     out$values <- values
     out
@@ -1248,19 +1223,16 @@
 # OBSERVED hit set (a task is a member iff hit == TRUE; both FALSE and NA mean "no
 # observed hit", hence non-member). `!A` is the complement of A's observed hit set
 # within the task universe. So `A & !B` with B unavailable keeps an A-hit task
-# INCLUDED (B produced no observed hit) -- the uncertainty lives in channel_coverage
-# and the membership audit, never silently in the final set operation. NA is
-# preserved only in the per-channel audit (membership/overlap), not propagated into
-# value. (A strict epistemic mode that propagates NA into value is a deliberate future
-# extension, not the default.) The public surface is value + channel_coverage;
-# included/excluded is a presentation recoding of value, not an engine field, and
-# expression polarity is derived internally, never a public per-channel column.
-#   values        per task: value (1/0), channel_coverage (complete/partial/failed).
+# INCLUDED (B produced no observed hit). NA is preserved only in the membership
+# overlap audit, not propagated into value. (A strict epistemic mode that propagates
+# NA into value is a deliberate future extension, not the default.) The public
+# deterministic surface is the value plus operational selection/count facts;
+# included/excluded is a presentation recoding of value, not an engine field.
+#   values        per task: value (1/0).
 #   channel_status per task x channel: selection_status + processing_status.
 #   evidence      per hit ref.
 #   overlap       UpSet-style summary: one row per membership pattern (TRUE/FALSE/NA
-#                 preserved) across the expression channels, with count, value,
-#                 channel_coverage.
+#                 preserved) across the expression channels, with count and value.
 # One channel's observed hit keys at a sub-output level: the DISTINCT level keys
 # on its hit evidence rows (a hit IS a row set; the rows carry the identity spine,
 # so the level placement is read off the evidence, never re-derived). Restricted
@@ -1305,8 +1277,7 @@
     task_ids <- as.character(tasks$task_id)
 
     reduced <- lapply(declared, function(ch) {
-        no_candidate <- .no_candidate_status(ch, variable)
-        .reduce_channel_result(channel_results[[ch]], task_ids, no_candidate)
+        .deterministic_hits_for_tasks(channel_results[[ch]], task_ids, ch)
     })
     names(reduced) <- declared
 
@@ -1385,20 +1356,9 @@
         combine_keys <- relation
     }
 
-    # channel_coverage: were the selected channels actually evaluable for this task?
-    # failed (a channel errored) > partial (a channel unavailable/unusable) > complete.
-    status_matrix <- do.call(cbind, lapply(
-        referenced, function(ch) reduced[[ch]]$status))
-    channel_coverage <- rep("complete", length(task_ids))
-    partial <- rowSums(
-        status_matrix == "unavailable" | status_matrix == "invalid") > 0L
-    failed <- rowSums(status_matrix == "error") > 0L
-    channel_coverage[partial] <- "partial"
-    channel_coverage[failed] <- "failed"
-
     values <- tibble::tibble(
         task_id = task_ids, variable = var_name,
-        value = as.integer(result), channel_coverage = channel_coverage)
+        value = as.integer(result))
 
     channel_status <- bind_rows(lapply(declared, function(ch) {
         .channel_status_rows(variable, ch, channel_results[[ch]], task_ids)
@@ -1413,8 +1373,7 @@
 
     wide <- tibble::tibble(task_id = task_ids)
     for (ch in referenced) wide[[ch]] <- vectors[[ch]]
-    overlap <- hit_set_overlap(wide, referenced, as.integer(result),
-                               channel_coverage)
+    overlap <- hit_set_overlap(wide, referenced, as.integer(result))
 
     out <- list(
         values = values,

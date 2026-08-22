@@ -4,10 +4,10 @@
 > definitions, not the author of those definitions.
 
 The package executes explicit study-variable specifications over prepared EDSAN
-views. It returns values together with source coverage, inspectable evidence, and
-execution provenance. The researcher owns the clinical definition and its
-scientific interpretation; `redsan` owns source normalization; `ellmer` owns
-model transport and structured output.
+views. It returns values together with operational selection facts, inspectable
+evidence, and execution provenance. The researcher owns the clinical definition
+and its scientific interpretation; `redsan` owns source normalization; `ellmer`
+owns model transport and structured output.
 
 The package is experimental and currently intended for internal use. Its API is
 allowed to break when a clearer execution contract is found. It contains no
@@ -257,7 +257,8 @@ the complete, aligned prepared-source rows of each final group. It can therefore
 use several columns, for example `weighted.mean(NUMRES, WEIGHT, na.rm = TRUE)` or
 `NUMRES[which.max(DATEXAM)]`. Missing values are not removed automatically: the
 expression owns its `NA` policy. If no payload row remains, the expression is not
-evaluated and the engine publishes a logical `NA`. Otherwise it must return
+evaluated and the engine publishes the typed missing value declared by `ptype`.
+Otherwise it must return
 exactly one cell: one atomic scalar or one list cell. Longer or dimensional
 results are cardinality errors. A row containing both `NUMRES` and `STRRES` is
 valid because the authored expression makes their use explicit.
@@ -382,6 +383,12 @@ records two independent controlled fields:
   `lucene_llm`, it is `completed`, `not_called`, `invalid`, or `failed`:
   respectively a valid grounded response, no model invocation, an unusable
   returned response, or a call/processing failure.
+
+Deterministic `values` contain the authored result, not a derived
+`channel_coverage` label. A returned deterministic run completed; whether rows
+were available or selected remains visible through `selection_status`, evidence,
+and `audit$counts`. Whole-frame LLM outputs retain their existing coverage and
+review fields until the LLM contract is revised.
 
 `evidence` has one row per retained evidence occurrence. `evidence_kind`
 distinguishes `source_row`, `lucene_hit`, and `llm_citation`. Structured evidence

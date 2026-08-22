@@ -25,12 +25,11 @@
 #   &  intersection of observed hit sets
 #   !  complement of an observed hit set relative to the task universe
 # `A & !B` with B unavailable keeps an A-hit task INCLUDED -- B produced no observed
-# hit, so the task stays in A. The uncertainty does NOT propagate into the decision;
-# it is reported separately as channel_coverage (complete/partial/failed) and kept in
-# the per-channel audit, which preserves the raw TRUE/FALSE/NA hit. (A strict
-# epistemic mode that propagates NA into the decision is a deliberate future
-# extension, not the default.) Set algebra over EXPLICIT observed hit sets, not
-# clinical ontology.
+# hit, so the task stays in A. The raw TRUE/FALSE/NA membership pattern remains in
+# the overlap audit, while operational selection facts and counts remain in their
+# own public tables. A strict epistemic mode that propagates NA into the decision is
+# a deliberate future extension, not the default. Set algebra over EXPLICIT
+# observed hit sets, not clinical ontology.
 #
 # This file is the PURE core (parser / grammar / evaluator / overlap), decoupled
 # from channel execution and output assembly; run_variable.R wraps it to
@@ -93,10 +92,10 @@
 
 # UpSet-style overlap summary: group tasks by their membership PATTERN across the
 # expression channels (the scientifically useful overlap structure), with the count
-# and the pattern-determined value + channel_coverage. `wide` is one row per task:
+# and the pattern-determined value. `wide` is one row per task:
 # task_id + one logical column per channel (hit T/F/NA, NA states preserved). Keeps
 # the per-channel state columns so it is directly pivotable for ggupset/UpSetR.
-hit_set_overlap <- function(wide, channels, value, channel_coverage) {
+hit_set_overlap <- function(wide, channels, value) {
     state_str <- function(x) ifelse(is.na(x), "NA", ifelse(x, "TRUE", "FALSE"))
     parts <- lapply(channels, function(ch) sprintf("%s:%s", ch, state_str(wide[[ch]])))
     pattern <- do.call(paste, c(parts, list(sep = " | ")))
@@ -104,10 +103,9 @@ hit_set_overlap <- function(wide, channels, value, channel_coverage) {
     for (channel in channels) df[[channel]] <- unname(df[[channel]])
     df$pattern <- unname(pattern)
     df$value <- unname(value)
-    df$channel_coverage <- unname(channel_coverage)
     df %>%
         dplyr::group_by(dplyr::across(dplyr::all_of(
-            c(channels, "pattern", "value", "channel_coverage")))) %>%
+            c(channels, "pattern", "value")))) %>%
         dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
         dplyr::arrange(dplyr::desc(n))
 }

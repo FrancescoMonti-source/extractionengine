@@ -87,6 +87,7 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
     # With no candidate rows the expression is not evaluated and the task gets
     # one stable missing cell. Multiple returned cells remain a loud error.
     expect_identical(empty_run$values$value, NA_real_)
+    expect_false("channel_coverage" %in% names(numeric_run$values))
 
     # Channel status keeps row selection separate from model processing. A
     # deterministic channel never needs model processing, whether or not its
@@ -129,6 +130,28 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
         intersect(c("evidence_ref", "source_row_id", "hit_ref"),
                   names(numeric_run$evidence)),
         "evidence_ref")
+
+    # Executor coverage is a total, closed task relation. Missing tasks and new
+    # states must reach an explicit implementation decision instead of being
+    # recoded as an apparently cautious public status.
+    intermediate <- numeric_run$audit$internal$channel_intermediates$result
+    missing_task <- intermediate
+    missing_task$coverage <- missing_task$coverage[0, , drop = FALSE]
+    states_for_tasks <- getFromNamespace(
+        ".states_for_tasks", "extractionengine")
+    expect_error(
+        states_for_tasks(missing_task, "P1"),
+        "exactly one row.*missing: P1")
+
+    unknown_state <- intermediate
+    unknown_state$coverage$processing_state <- "future_state"
+    channel_status_rows <- getFromNamespace(
+        ".channel_status_rows", "extractionengine")
+    expect_error(
+        channel_status_rows(
+            numeric_run$audit$internal$resolved_spec,
+            "result", unknown_state, "P1"),
+        "unsupported processing_state.*future_state")
 
     expect_error(
         run_variable(
@@ -252,6 +275,8 @@ test_that("relational keys control qualification, evidence, and broadcast", {
         event_restricted$audit$combine_keys$EVTID[
             event_restricted$audit$combine_keys$qualifies],
         "E1")
+    expect_false("channel_coverage" %in% names(event_restricted$values))
+    expect_false("channel_coverage" %in% names(event_restricted$audit$overlap))
     # Audit stages describe one relational funnel instead of exposing helper
     # names. The window remains a separate stage between the pre-selector rows
     # and the selector itself.
