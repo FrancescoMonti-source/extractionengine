@@ -2038,3 +2038,33 @@ that option, while both vignette source files execute successfully.
 **Files changed.** `R/channels.R`, `R/spec.R`, `R/run_variable.R`,
 `R/structured.R`, `NAMESPACE`, `man/channels.Rd`, and this entry. Public
 `values`, `channel_status`, and `evidence` did not change.
+
+## Phase 1.7 internal source registry (2026-08-22)
+
+**Decision.** De-export `source_spec()`, `source_roles()`,
+`validate_source_view()`, and `edsan_source_specs()`. The first three remain
+internal implementation functions; the last was an unused public getter for
+the private `EE_SOURCES` registry.
+
+**Why.** Public execution accepts only registered, prepared EDSAN sources. A
+caller-created source specification could be constructed and validated but
+could not be registered with or executed by `.run_selected_channel()`. Keeping
+the constructors public therefore advertised an authoring path the engine did
+not support. Static searches found no external caller or import in the local
+Git and Desktop project roots.
+
+**Change.** Remove the four `NAMESPACE` exports and their shared help page.
+Source registration, role lookup, and prepared-view validation stay in
+`R/data.R`, where the execution kernel still uses them.
+
+**Verification.** Namespace probes confirm that all four names remain internal
+and none is exported; `EE_SOURCES` still contains the four registered sources.
+The Phase 0 oracle is unchanged in all four cases and all 46 current-contract
+expectations pass. `R CMD build` passes. `R CMD check --no-manual
+--no-build-vignettes` validates installation, code, documentation, and tests;
+its only two warnings are the expected missing built-vignette outputs, while
+both vignette source files execute successfully.
+
+**Files changed.** `NAMESPACE`, `man/source_spec.Rd`, and this entry. No source
+contract, prepared data, or execution result changed. The public API
+intentionally shrank by these four unusable entries.
