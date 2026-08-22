@@ -503,8 +503,9 @@ results$mean_k_in_qualified_stays$audit$counts |>
   filter(PATID == "P1", channel == "potassium_rows")
 ```
 
-Low-level executor objects live under `audit$internal`. They are useful for
-debugging, but they are not the normal onboarding surface.
+`lineage` keeps only artifact coordinates and the furthest stage each artifact
+reached: selected, model-input, used, or cited. Raw executor frames and copied
+source payload are not returned.
 
 ## 8. A checklist for authoring a new variable
 

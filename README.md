@@ -249,7 +249,9 @@ declarations answer separate questions:
 
 The payload channel's public evidence follows the same qualified-row relation:
 it cannot include rows from units excluded before grouping. The complete
-pre-gate channel intermediate remains available under `audit$internal`.
+pre-gate payload is not copied into the result; its selected source coordinates
+remain visible in `audit$lineage` and resolve against the caller-owned source
+snapshot.
 
 The filter must be `NULL` when there is no combine, when
 `bin_output(group_by = ...)` publishes membership directly, when combine and
@@ -420,6 +422,18 @@ When a row carries a native `EVTID`, it is published as `source_EVTID`; an outpu
 `EVTID` remains the target stay. The two may be equal without being semantically
 interchangeable.
 
+`audit$lineage` is the coordinate-only long relation shared by structured,
+Lucene, and LLM activations. Each row identifies one source row or task-local
+snippet and the furthest stage it reached: `selected`, `model_input`, `used`, or
+`cited`. A later stage implies the earlier selection stages; the table does not
+duplicate an artifact once per transition.
+Output-grain columns identify the target task; `source_PATID`, `source_EVTID`,
+and `source_ELTID` identify the source occurrence when available.
+`artifact_position` preserves snippet order, while `source_row_ref` points back
+to the caller's source snapshot without copying its payload. Selection status,
+terminal selection/model-input counts, and fine-grain combine placement are
+derived from this relation.
+
 `run_protocol()` accepts either an entirely unnamed variable list or an entirely
 named one whose names exactly equal each `spec$name` in the same order. Canonical
 names must be unique, and the returned result list is always named from
@@ -460,10 +474,9 @@ each channel's membership and the final `qualifies` decision. `overlap` is
 computed from task-level hit patterns; it is not an aggregation of
 `combine_keys`.
 
-Executable and debugging details are explicitly separated under
-`audit$internal` as `resolved_spec` and `channel_intermediates`. Printing
-`audit$execution_manifest` gives a compact author-facing summary; its complete
-resolved fields remain directly addressable for programmatic audit.
+Raw executor frames are not returned. Printing `audit$execution_manifest` gives
+a compact author-facing summary; its complete resolved fields remain directly
+addressable for programmatic audit.
 
 `bin_output(group_by = ...)` remains the output for source membership or a
 combine result. A deterministic `method = "lucene"` activation never creates a

@@ -62,8 +62,15 @@ outputs retain their existing coverage and review fields until that separate
 contract is revised.
 
 \code{audit} contains a long \code{counts} table (grain keys, \code{channel},
-\code{stage}, \code{unit}, \code{n}), \code{llm_calls}, and a resolved
-\code{execution_manifest}. Controlled stages are \code{pre_selector},
+\code{stage}, \code{unit}, \code{n}), a coordinate-only \code{lineage} table,
+\code{llm_calls}, and a resolved \code{execution_manifest}. \code{lineage}
+records the furthest stage reached by each source row or task-local snippet:
+\code{selected}, \code{model_input}, \code{used}, or \code{cited}. Later stages
+imply earlier selection stages; artifacts are not duplicated as an event log.
+It retains source identity, snippet position, and a source-row reference without
+copying source payload.
+Selection status, terminal selection/model-input counts, and fine-grain combine
+placement are derived from it. Controlled count stages are \code{pre_selector},
 \code{window}, \code{selector}, \code{filtered_selector}, \code{model_input},
 and \code{output_input}; they appear only when separately instrumented, so
 absence does not prove an operation did not run. They count associated
@@ -86,8 +93,7 @@ Combine runs
 additionally retain \code{overlap}, a tabular summary of channel-membership
 patterns, and \code{combine_keys}, the evaluated key-level relation at
 \code{combine$by}. \code{overlap} is computed from task-level hit patterns, not
-by aggregating \code{combine_keys}. Executable and debugging details are kept under
-\code{audit$internal} as \code{resolved_spec} and \code{channel_intermediates}.
+by aggregating \code{combine_keys}. Raw executor frames are not returned.
 Printing \code{execution_manifest} gives a compact summary while its complete
 resolved fields remain directly addressable.
 

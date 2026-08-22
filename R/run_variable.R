@@ -4,7 +4,7 @@
 # Executes one variable_spec over supplied input rows and a named list of source
 # data, then returns three ordinary relational views (values, channel_status,
 # evidence) plus a nested audit bundle containing staged counts, LLM calls, an
-# execution manifest, combine diagnostics, and internal channel intermediates.
+# execution manifest, artifact lineage, and combine diagnostics.
 #
 # Channel execution dispatches on the channel TYPE (code / text / lab), NOT on the
 # channel name -- the runner must stay free of any one concept's vocabulary. The
@@ -786,13 +786,7 @@
 # activation produced rows after selector + activation filters. Processing is the
 # optional post-selection step; today that is structured LLM extraction only.
 .candidate_counts_for_tasks <- function(result, task_ids) {
-    candidates <- result$candidates
-    if (!is.data.frame(candidates) || !"task_id" %in% names(candidates)) {
-        return(integer(length(task_ids)))
-    }
-    tabulate(
-        match(as.character(candidates$task_id), as.character(task_ids)),
-        nbins = length(task_ids))
+    .lineage_stage_counts(result, task_ids, .lineage_selected_stages)
 }
 
 .channel_status_rows <- function(variable, channel_name, result, task_ids) {
@@ -1113,7 +1107,8 @@
     # Public payload evidence follows the same relational gate as the output
     # value expression.
     # Other channels retain their complete hit evidence, and the unfiltered
-    # payload intermediate remains available under audit$internal.
+    # payload coordinates remain visible as selected/used audit lineage without
+    # copying the source payload into the returned audit.
     payload_keys <- paste(
         as.character(payload$task_id), as.character(payload$source_row_id),
         sep = "\r")
@@ -1235,33 +1230,36 @@
 #   overlap       UpSet-style summary: one row per membership pattern (TRUE/FALSE/NA
 #                 preserved) across the expression channels, with count and value.
 # One channel's observed hit keys at a sub-output level: the DISTINCT level keys
-# on its hit evidence rows (a hit IS a row set; the rows carry the identity spine,
-# so the level placement is read off the evidence, never re-derived). Restricted
+# on its contributing lineage rows (a hit IS a row set; the rows carry the
+# identity spine, so the level placement is read off the lineage, never
+# re-derived). Restricted
 # to tasks whose reduced hit is TRUE -- a grounded-but-negative text answer may
 # cite evidence, and a non-hit must not contribute keys. Fail closed twice: a
-# channel whose evidence lacks the key cannot enter the algebra, and a hit row
+# channel whose lineage lacks the key cannot enter the algebra, and a hit row
 # without a key value cannot be placed at the level.
 .channel_combine_keys <- function(res, by, channel_name, hit_task_ids) {
-    ev <- res$evidence
-    if (is.null(ev) || !nrow(ev) || !length(hit_task_ids)) {
+    rows <- .lineage_stage_rows(res, .lineage_contributing_stages)
+    if (!nrow(rows) || !length(hit_task_ids)) {
         return(tibble::tibble(task_id = character(), key = character()))
     }
-    if (!by %in% names(ev)) {
+    key_column <- paste0("source_", by)
+    if (!key_column %in% names(rows)) {
         stop("combine by = '", by, "': channel '", channel_name,
-             "' evidence does not carry that key; level algebra needs ",
-             "spine-keyed evidence (HDW sources and raw-document retrieval ",
+             "' lineage does not carry that key; level algebra needs ",
+             "spine-keyed artifacts (HDW sources and raw-document retrieval ",
              "carry it; pre-retrieved text fixtures must include it).",
              call. = FALSE)
     }
-    ev <- ev[as.character(ev$task_id) %in% hit_task_ids, , drop = FALSE]
-    keys <- as.character(ev[[by]])
+    rows <- rows[as.character(rows$task_id) %in% hit_task_ids, , drop = FALSE]
+    keys <- as.character(rows[[key_column]])
     if (anyNA(keys) || any(!nzchar(keys))) {
         stop("combine by = '", by, "': channel '", channel_name,
-             "' has hit evidence without a ", by, " value; a hit that ",
+             "' has a contributing artifact without a ", by,
+             " value; a hit that ",
              "cannot be placed at the level cannot enter the algebra.",
              call. = FALSE)
     }
-    dplyr::distinct(tibble::tibble(task_id = as.character(ev$task_id),
+    dplyr::distinct(tibble::tibble(task_id = as.character(rows$task_id),
                                    key = keys))
 }
 
@@ -1474,9 +1472,19 @@
 .channel_audit_counts <- function(variable, channel_name, result, task_ids) {
     channel <- variable$channels[[channel_name]]
     counts <- list()
+    has_activation_filter <- !is.null(channel$filter_rows) ||
+        !is.null(channel$filter_groups)
+    selection_stage <- if (has_activation_filter) {
+        "filtered_selector"
+    } else {
+        "selector"
+    }
 
     if (is.data.frame(result$audit_counts)) {
-        counts[[length(counts) + 1L]] <- result$audit_counts
+        # Text retrieval still owns its upstream document/window counts. The
+        # terminal selection count comes from the common lineage relation.
+        counts[[length(counts) + 1L]] <- result$audit_counts[
+            result$audit_counts$stage != selection_stage, , drop = FALSE]
     } else if (channel$type %in% c("code", "lab", "doc")) {
         counts[[length(counts) + 1L]] <- .audit_stage(
             task_ids, channel_name, "pre_selector", "source_row",
@@ -1487,24 +1495,30 @@
                 .audit_coverage_count(result, task_ids, "n_scope_rows"))
         }
 
-        observations <- result$observations
-        selector_keep <- observations$is_target | observations$row_demoted |
-            observations$group_demoted
-        counts[[length(counts) + 1L]] <- .audit_stage(
-            task_ids, channel_name, "selector", "source_row",
-            .count_task_rows(observations, task_ids, selector_keep))
-        if (!is.null(channel$filter_rows) || !is.null(channel$filter_groups)) {
+        if (has_activation_filter) {
+            observations <- result$observations
+            selector_keep <- observations$is_target | observations$row_demoted |
+                observations$group_demoted
             counts[[length(counts) + 1L]] <- .audit_stage(
-                task_ids, channel_name, "filtered_selector", "source_row",
-                .count_task_rows(observations, task_ids,
-                                 observations$is_target))
+                task_ids, channel_name, "selector", "source_row",
+                .count_task_rows(observations, task_ids, selector_keep))
         }
     }
+
+    selection_unit <- if (identical(channel$type, "text")) {
+        "snippet"
+    } else {
+        "source_row"
+    }
+    counts[[length(counts) + 1L]] <- .audit_stage(
+        task_ids, channel_name, selection_stage, selection_unit,
+        .lineage_stage_counts(result, task_ids, .lineage_selected_stages))
 
     if (.channel_needs_chat(channel)) {
         counts[[length(counts) + 1L]] <- .audit_stage(
             task_ids, channel_name, "model_input", "snippet",
-            .count_task_rows(result$model_candidates, task_ids))
+            .lineage_stage_counts(
+                result, task_ids, .lineage_model_input_stages))
     }
     dplyr::bind_rows(counts)
 }
@@ -1560,12 +1574,6 @@
     })
     result <- dplyr::bind_rows(calls)
     if (!nrow(result)) .empty_audit_llm_calls() else result
-}
-
-.build_channel_intermediates <- function(channel_results) {
-    lapply(channel_results, function(result) {
-        result[setdiff(names(result), c("attempts", "audit_counts"))]
-    })
 }
 
 # --- resolved execution manifest (DESIGN §12, invariant 27) --------------------
@@ -1920,10 +1928,13 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
     channel_results <- lapply(names(variable$channels), function(channel_name) {
         scope_keys <- .channel_scope_keys(
             .channel_def(variable, channel_name), tasks)
-        .run_selected_channel(
+        result <- .run_selected_channel(
             variable, channel_name, tasks, sources,
             channel_chats[[channel_name]],
             grain_keys = scope_keys)
+        result$lineage <- .build_channel_lineage(
+            variable, channel_name, result)
+        result
     })
     names(channel_results) <- names(variable$channels)
 
@@ -1967,6 +1978,7 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
     }
     counts <- .build_audit_counts(variable, channel_results, out, tasks)
     llm_calls <- .build_audit_llm_calls(channel_results)
+    lineage <- .build_audit_lineage(channel_results)
 
     # n_payload_rows is execution bookkeeping, not part of the produced variable.
     out$values$n_payload_rows <- NULL
@@ -1975,7 +1987,10 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
     core <- out[intersect(c("values", "channel_status", "evidence"), names(out))]
     temporary <- c(
         core,
-        list(.audit_counts = counts, .audit_llm_calls = llm_calls),
+        list(
+            .audit_counts = counts,
+            .audit_llm_calls = llm_calls,
+            .audit_lineage = lineage),
         if (is.data.frame(out$combine_keys)) {
             list(.audit_combine_keys = out$combine_keys)
         } else list())
@@ -1985,14 +2000,12 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
     audit <- list(
         counts = published$.audit_counts,
         llm_calls = published$.audit_llm_calls,
+        lineage = published$.audit_lineage,
         execution_manifest = .build_execution_manifest(variable, roster))
     if (is.data.frame(out$overlap)) audit$overlap <- out$overlap
     if (is.data.frame(out$combine_keys)) {
         audit$combine_keys <- published$.audit_combine_keys
     }
-    audit$internal <- list(
-        resolved_spec = variable,
-        channel_intermediates = .build_channel_intermediates(channel_results))
     result <- published[intersect(
         c("values", "channel_status", "evidence"), names(published))]
     result$audit <- audit

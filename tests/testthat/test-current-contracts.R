@@ -30,8 +30,10 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
     biology <- lab_fixture()
     cohort <- tibble::tibble(PATID = "P1")
 
+    numeric_variable <- lab_variable(
+        "K.K", max(NUMRES, na.rm = TRUE), double())
     numeric_run <- run_variable(
-        lab_variable("K.K", max(NUMRES, na.rm = TRUE), double()), cohort,
+        numeric_variable, cohort,
         sources = list(biology = biology))
     character_run <- run_variable(
         lab_variable(
@@ -131,10 +133,31 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
                   names(numeric_run$evidence)),
         "evidence_ref")
 
+    # Phase 4 nucleus: structured selection and contribution use the same
+    # coordinate-only lineage relation that text/LLM uses below. Source payload
+    # is not copied into audit.
+    expect_identical(
+        numeric_run$audit$lineage |>
+            dplyr::select(
+                stage, artifact_type, artifact_id,
+                source_row_ref, source_ELTID),
+        tibble::tibble(
+            stage = "used",
+            artifact_type = "source_row",
+            artifact_id = sprintf("biology:%08d", 1:3),
+            source_row_ref = sprintf("biology:%08d", 1:3),
+            source_ELTID = paste0("L", 1:3)))
+    expect_false("internal" %in% names(numeric_run$audit))
+
     # Executor coverage is a total, closed task relation. Missing tasks and new
     # states must reach an explicit implementation decision instead of being
     # recoded as an apparently cautious public status.
-    intermediate <- numeric_run$audit$internal$channel_intermediates$result
+    intermediate <- list(
+        coverage = tibble::tibble(
+            task_id = "P1", processing_state = "measured"),
+        lineage = tibble::tibble(
+            task_id = "P1", stage = "selected",
+            artifact_id = "biology:00000001"))
     missing_task <- intermediate
     missing_task$coverage <- missing_task$coverage[0, , drop = FALSE]
     states_for_tasks <- getFromNamespace(
@@ -149,7 +172,7 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
         ".channel_status_rows", "extractionengine")
     expect_error(
         channel_status_rows(
-            numeric_run$audit$internal$resolved_spec,
+            resolve_variable_spec(numeric_variable),
             "result", unknown_state, "P1"),
         "unsupported processing_state.*future_state")
 
@@ -709,6 +732,19 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
                   names(run$evidence)),
         "evidence_ref")
     expect_identical(
+        run$audit$lineage |>
+            dplyr::select(
+                stage, artifact_type, artifact_id, artifact_position,
+                source_row_ref, source_EVTID),
+        tibble::tibble(
+            stage = "cited",
+            artifact_type = "snippet",
+            artifact_id = "S001",
+            artifact_position = 1L,
+            source_row_ref = "D001",
+            source_EVTID = "SOURCE_STAY"))
+    expect_false("internal" %in% names(run$audit))
+    expect_identical(
         list(
             declared_fields = intersect(
                 c("declared_model", "declared_model_params"),
@@ -796,16 +832,35 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
             snippet_text = "Sevrage tabagique documenté."))
     crowded_documents$candidates$hit_text <- NULL
     seen$snippet_ids <- "S001"
-    invisible(run_variable(
+    crowded_run <- run_variable(
         make_variable(max_candidates = 2L), cohort,
         sources = list(documents = crowded_documents),
-        chat = structure(list(), class = "fake")))
+        chat = structure(list(), class = "fake"))
     prompt_type <- seen$types[[length(seen$types)]]
     prompt_evidence_enum <-
         S7::props(S7::props(prompt_type)$properties$snippet_ids)$items
     expect_identical(
         S7::props(prompt_evidence_enum)$values,
         c("S001", "S003"))
+    expect_identical(
+        crowded_run$audit$lineage |>
+            dplyr::filter(EVTID == "TARGET1") |>
+            dplyr::arrange(artifact_id) |>
+            dplyr::select(
+                artifact_id, stage, artifact_position, source_row_ref),
+        tibble::tibble(
+            artifact_id = c("S001", "S002", "S003"),
+            stage = c("cited", "selected", "model_input"),
+            artifact_position = c(1L, 2L, 2L),
+            source_row_ref = c("D001", "D002", "D003")))
+    crowded_counts <- crowded_run$audit$counts |>
+        dplyr::filter(
+            EVTID == "TARGET1", channel == "text_tabagisme",
+            stage %in% c("selector", "model_input"))
+    expect_identical(
+        crowded_counts$n[match(
+            c("selector", "model_input"), crowded_counts$stage)],
+        c(3L, 2L))
 
     # Pre-retrieved fixtures must describe a possible retrieval result. A task
     # cannot claim no candidate while still supplying positive candidate rows.

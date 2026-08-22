@@ -2300,3 +2300,48 @@ made.
 `tests/testthat/test-current-contracts.R`, `README.md`, `DESIGN.md`, `PLAN.md`,
 `man/operators.Rd`, `man/run_variable.Rd`, `man/variable_spec.Rd`, and this
 entry.
+
+## Phase 4.2 activation lineage (2026-08-22)
+
+**Boundary.** This is the first vertical slice of the common relational core,
+not the complete executor rewrite. It normalizes the artifacts that survived
+activation selection and later processing; upstream `pre_selector` and `window`
+rows still reach audit through the temporary executor-specific counters.
+
+**Relation.** `audit$lineage` contains one coordinate-only row per activation
+artifact. `stage` is the furthest stage reached (`selected`, `model_input`,
+`used`, or `cited`), not an event log, so a cited snippet is not copied three
+times. `artifact_type` distinguishes prepared `source_row` coordinates from
+task-local `snippet` IDs. Target grain keys remain separate from
+`source_PATID`/`source_EVTID`/`source_ELTID`; `source_row_ref` resolves against
+the caller-owned source input and `artifact_position` preserves prompt order.
+No prepared-source payload is copied into the relation.
+
+**Authoritative consumers.** `channel_status$selection_status`, terminal
+selector/model-input counts, and fine-grain combine key placement now read
+lineage rather than `candidates`, `model_candidates`, or `evidence` separately.
+The old `audit$internal` bundle and its complete copies of executor frames were
+removed. Public values, statuses, and evidence are unchanged.
+
+**Sentinel.** The structured case records three biology source rows at `used`.
+The bounded LLM case records one cited snippet, one candidate left at `selected`,
+and one uncited prompt item at `model_input`; the audit counts remain 3 selected
+and 2 model inputs. A cited snippet keeps its original prompt position.
+
+**Still open.** Executors still construct their legacy coverage/value/candidate/
+evidence/observation frames during the run. Phase 4 must next move upstream
+eligibility/window facts into the common relation, then make that relation the
+executor contract and use it to schedule payload lazily.
+
+**Verification.** All 65 current-contract expectations pass with no warnings.
+The four Phase 0 differential cases remain identical to
+`after-phase3b-final.rds`. A full source build creates both vignettes, and
+`R CMD check --no-manual --no-build-vignettes` finishes with `Status: OK`,
+including tests, documentation, and execution of both vignette sources. No real
+model call was made. A same-shaped 500-task/2,500-row numeric payload probe
+returned a 1.7 MB result with exactly 2,500 lineage rows; this is a diagnostic,
+not a performance contract.
+
+**Files changed.** `R/lineage.R`, `R/run_variable.R`,
+`tests/testthat/test-current-contracts.R`, `README.md`, `DESIGN.md`, `PLAN.md`,
+`vignettes/getting-started.Rmd`, `man/run_variable.Rd`, and this entry.

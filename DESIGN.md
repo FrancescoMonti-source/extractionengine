@@ -248,10 +248,21 @@ row with `evidence_kind = "source_row"`, `"lucene_hit"`, or
 `"llm_citation"`. `evidence_ref` is an opaque, non-missing coordinate local to
 the executed run and source snapshot, not a globally durable warehouse key. An
 LLM citation additionally carries its task-local `snippet_id`. Internal
-`source_row_id` and `hit_ref` coordinates remain available only in
-`audit$internal$channel_intermediates`. A native evidence `EVTID` is published as
+`source_row_id` and `hit_ref` columns are not published as evidence. A native
+evidence `EVTID` is published as
 `source_EVTID`; at stay-grain output the target remains `EVTID`, even when the
 two values are equal.
+
+`audit$lineage` is the common coordinate-only activation relation. One row
+places one `source_row` or task-local `snippet` at the furthest stage it reached:
+`selected`, `model_input`, `used`, or `cited`. Later stages imply earlier
+selection stages; an artifact is not duplicated as an event log. Target grain
+keys remain distinct from
+`source_PATID`/`source_EVTID`/`source_ELTID`; `source_row_ref` resolves against
+the caller-owned source snapshot and `artifact_position` records snippet order.
+This relation is authoritative for operational selection, terminal
+selection/model-input counts, and fine-grain combine placement. It deliberately
+does not copy prepared-source payload.
 
 `audit$counts` is a long table with output-grain keys, `channel`, `stage`,
 `unit`, and `n`. The controlled stages are `pre_selector`, `window`, `selector`,
@@ -267,9 +278,8 @@ zero-row table keeps the same schema. The resolved `execution_manifest` is a
 configuration snapshot rather than an activity log. Combination runs additionally retain
 `overlap`, the task-level channel-membership intersections, and `combine_keys`,
 the evaluated key-level relation, inside the audit rather than as ordinary
-output tables. The live `resolved_spec` and raw `channel_intermediates` are debugging details under
-`audit$internal`, not ordinary audit tables. The execution manifest has a compact
-print method while retaining its complete machine-readable structure.
+output tables. Raw executor frames are not returned. The execution manifest has
+a compact print method while retaining its complete machine-readable structure.
 
 The execution manifest and `inspect()` record activation alias,
 `origin_concept`, `origin_channel`, source, and inline/catalog origin,
