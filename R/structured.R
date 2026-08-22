@@ -54,34 +54,6 @@
          call. = FALSE)
 }
 
-.assert_evidence_resolves <- function(evidence, observations, source_rows) {
-    if (!nrow(evidence)) return(invisible(TRUE))
-
-    evidence_key <- paste(evidence$task_id, evidence$source_row_id, sep = "\r")
-    observation_key <- paste(observations$task_id, observations$source_row_id, sep = "\r")
-    if (anyDuplicated(evidence_key)) {
-        stop("selected evidence contains duplicate task/source-row links",
-             call. = FALSE)
-    }
-    source_matches <- vapply(
-        evidence$source_row_id,
-        function(id) sum(source_rows$source_row_id == id),
-        integer(1))
-    if (any(source_matches != 1L)) {
-        stop("selected evidence source_row_id must resolve exactly once in source rows",
-             call. = FALSE)
-    }
-    observation_matches <- vapply(
-        evidence_key,
-        function(key) sum(observation_key == key),
-        integer(1))
-    if (any(observation_matches != 1L)) {
-        stop("selected evidence must resolve exactly once in observations",
-             call. = FALSE)
-    }
-    invisible(TRUE)
-}
-
 # --- scope helpers (point / interval) ----------------------------------------
 
 .within_point <- function(t, lo, hi) !is.na(t) & t >= lo & t <= hi
@@ -534,7 +506,6 @@ measure_code_presence <- function(source_table, tasks, codes,
             status = processing_state,
             error = NA_character_)
 
-    .assert_evidence_resolves(evidence, observations, rows)
     list(
         coverage = coverage,
         values = values,
@@ -695,7 +666,6 @@ measure_doc_presence <- function(docs_index, tasks, filters,
             status = processing_state,
             error = NA_character_)
 
-    .assert_evidence_resolves(evidence, observations, rows)
     list(
         coverage = coverage,
         values = values,
@@ -872,7 +842,6 @@ measure_analyte_values <- function(source_table, tasks, analytes,
             status = processing_state,
             error = NA_character_)
 
-    .assert_evidence_resolves(evidence, observations, biol)
     list(
         coverage = coverage,
         values = values,

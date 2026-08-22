@@ -1972,3 +1972,30 @@ that option, while both vignette source files execute successfully.
 
 **Files changed.** `R/channel-combine.R`, `R/run_variable.R`, and this entry. No
 executor, authoring API, public schema, or clinical rule changed.
+
+## Phase 1.5 redundant evidence assertion (2026-08-22)
+
+**Decision.** Delete `.assert_evidence_resolves()` and its three calls from the
+structured executors. This removes a repeated quadratic scan, not an evidence
+contract.
+
+**Why the check was tautological.** `.validate_structured_inputs()` already
+requires unique `task_id` and `source_row_id`. Each `observations` relation is an
+inner join of those task and source rows; the row/group predicates only mutate
+and demote existing rows. Each `evidence` relation is then a filtered projection
+of `observations`. Consequently every evidence `(task_id, source_row_id)` pair is
+unique, exists once in observations, and its `source_row_id` exists once in the
+prepared source by construction. The deleted function had no independent
+failure state.
+
+**Verification.** There are no live references to the function or its three
+error messages. The Phase 0 oracle is unchanged in all four cases and the three
+current-contract sentinels pass. On R 4.5.2, one 1,000-task/5,000-payload-row
+numeric `from_channel()` run fell from 0.780 s to 0.500 s (1.6x total-run
+speedup); the timing is supporting evidence, not a contract. `R CMD build`
+passes. `R CMD check --no-manual --no-build-vignettes` validates installation,
+code, documentation, and tests; its only two warnings are the expected missing
+built-vignette outputs, while both vignette source files execute successfully.
+
+**Files changed.** `R/structured.R` and this entry. No public or private result
+field, executor input, or authoring API changed.
