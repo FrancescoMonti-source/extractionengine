@@ -139,10 +139,10 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
     expect_identical(
         numeric_run$audit$lineage |>
             dplyr::select(
-                stage, artifact_type, artifact_id,
+                furthest_stage, artifact_type, artifact_id,
                 source_row_ref, source_ELTID),
         tibble::tibble(
-            stage = c(rep("used", 3), rep("pre_selector", 2)),
+            furthest_stage = c(rep("used", 3), rep("pre_selector", 2)),
             artifact_type = "source_row",
             artifact_id = sprintf("biology:%08d", 1:5),
             source_row_ref = sprintf("biology:%08d", 1:5),
@@ -314,10 +314,10 @@ test_that("relational keys control qualification, evidence, and broadcast", {
     expect_identical(
         event_restricted$audit$lineage |>
             dplyr::filter(channel == "hb_low") |>
-            dplyr::count(stage, name = "n") |>
-            dplyr::arrange(stage),
+            dplyr::count(furthest_stage, name = "n") |>
+            dplyr::arrange(furthest_stage),
         tibble::tibble(
-            stage = c("pre_selector", "used", "window"),
+            furthest_stage = c("pre_selector", "used", "window"),
             n = c(1L, 2L, 3L)))
     expect_length(
         intersect(
@@ -434,11 +434,11 @@ test_that("relational keys control qualification, evidence, and broadcast", {
     expect_identical(
         event_text_run$audit$lineage |>
             dplyr::filter(channel == "alpha") |>
-            dplyr::count(artifact_type, stage, name = "n") |>
-            dplyr::arrange(artifact_type, stage),
+            dplyr::count(artifact_type, furthest_stage, name = "n") |>
+            dplyr::arrange(artifact_type, furthest_stage),
         tibble::tibble(
             artifact_type = c("document", "snippet"),
-            stage = c("pre_selector", "used"),
+            furthest_stage = c("pre_selector", "used"),
             n = c(2L, 2L)))
     expect_identical(
         sort(event_text_run$evidence$source_EVTID[
@@ -757,10 +757,10 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
     expect_identical(
         run$audit$lineage |>
             dplyr::select(
-                stage, artifact_type, artifact_id, artifact_position,
+                furthest_stage, artifact_type, artifact_id, artifact_position,
                 source_row_ref, source_EVTID),
         tibble::tibble(
-            stage = "cited",
+            furthest_stage = "cited",
             artifact_type = "snippet",
             artifact_id = "S001",
             artifact_position = 1L,
@@ -870,10 +870,10 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
             dplyr::filter(EVTID == "TARGET1") |>
             dplyr::arrange(artifact_id) |>
             dplyr::select(
-                artifact_id, stage, artifact_position, source_row_ref),
+                artifact_id, furthest_stage, artifact_position, source_row_ref),
         tibble::tibble(
             artifact_id = c("S001", "S002", "S003"),
-            stage = c("cited", "selected", "model_input"),
+            furthest_stage = c("cited", "selected", "model_input"),
             artifact_position = c(1L, 2L, 2L),
             source_row_ref = c("D001", "D002", "D003")))
     crowded_counts <- crowded_run$audit$counts |>

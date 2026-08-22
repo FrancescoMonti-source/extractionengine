@@ -1,6 +1,7 @@
 # Internal activation lineage -------------------------------------------------
 #
-# One row identifies one activation artifact at one execution stage. The
+# One row identifies one activation artifact and the furthest execution stage
+# it reached. The
 # relation deliberately carries only coordinates, never source payload. During
 # the Phase 4 migration the executors still expose their legacy frames, but
 # downstream selection, combine placement, and terminal audit counts read this
@@ -18,7 +19,7 @@
         variable = character(),
         channel = character(),
         source = character(),
-        stage = character(),
+        furthest_stage = character(),
         artifact_type = character(),
         artifact_id = character(),
         source_row_ref = character(),
@@ -107,7 +108,7 @@
         variable = variable_name,
         channel = channel_name,
         source = source_name,
-        stage = stage,
+        furthest_stage = stage,
         artifact_type = artifact_type,
         artifact_id = artifact_id,
         source_row_ref = source_row_ref,
@@ -174,11 +175,14 @@
     lineage <- dplyr::bind_rows(rows)
     if (!nrow(lineage)) return(.empty_activation_lineage())
 
-    # `stage` is the furthest stage reached, not an event log. One artifact thus
-    # occupies one row even when it was selected, passed to the model, and cited.
+    # `furthest_stage` is the furthest stage reached, not an event log. One
+    # artifact thus occupies one row even when it was selected, passed to the
+    # model, and cited. Counting rows by it therefore yields disjoint buckets;
+    # audit$counts$stage is cumulative. Two meanings, two names.
     lineage %>%
         dplyr::mutate(
-            .stage_rank = match(.data$stage, .lineage_stage_order)) %>%
+            .stage_rank = match(
+                .data$furthest_stage, .lineage_stage_order)) %>%
         dplyr::arrange(
             .data$task_id, .data$artifact_type, .data$artifact_id,
             dplyr::desc(.data$.stage_rank)) %>%
@@ -192,11 +196,11 @@
 
 .lineage_stage_rows <- function(result, stages) {
     lineage <- result$lineage
-    required <- c("task_id", "stage", "artifact_id")
+    required <- c("task_id", "furthest_stage", "artifact_id")
     if (!is.data.frame(lineage) || !all(required %in% names(lineage))) {
         stop("Channel result is missing its activation lineage.", call. = FALSE)
     }
-    lineage[lineage$stage %in% stages, , drop = FALSE]
+    lineage[lineage$furthest_stage %in% stages, , drop = FALSE]
 }
 
 .lineage_stage_counts <- function(result, task_ids, stages,

@@ -424,11 +424,13 @@ interchangeable.
 
 `audit$lineage` is the coordinate-only long relation shared by structured,
 Lucene, and LLM activations. Each row identifies one source row, searchable
-document, or task-local snippet and the furthest stage it reached:
+document, or task-local snippet and the `furthest_stage` it reached:
 `pre_selector`, `window`, `selected`, `model_input`, `used`, or `cited`. A later
 stage implies the earlier stages of the same artifact; the table does not
-duplicate an artifact once per transition. Text documents remain distinct from
-their snippets because one document can produce several snippets.
+duplicate an artifact once per transition. Counting rows by `furthest_stage`
+therefore gives disjoint buckets, unlike the cumulative `audit$counts$stage`.
+Text documents remain distinct from their snippets because one document can
+produce several snippets.
 Output-grain columns identify the target task; `source_PATID`, `source_EVTID`,
 and `source_ELTID` identify the source occurrence when available.
 `artifact_position` preserves snippet order, while `source_row_ref` points back

@@ -15,7 +15,12 @@ The cases cover:
 - a structured laboratory payload, including one declared task with no payload;
 - an `ELTID` combine between two aliases of the same biology source;
 - a deterministic fake-LLM extraction with a no-candidate sibling task;
-- a metadata-selected document date inside an authored window.
+- a metadata-selected document date inside an authored window;
+- three runs that freeze the declared search boundary. The signal sits on one
+  stay only. The same stay must answer the same way whether or not its sibling
+  is in the cohort, and `search_within` -- not the engine -- must decide whether
+  it sees the sibling at all. If the patient-scoped and event-scoped runs ever
+  agree, the declaration stopped being load-bearing and defect A is back.
 
 Generate the baseline before changing execution code:
 
@@ -30,9 +35,9 @@ Rscript tools/differential-oracle/snapshot.R . outputs/differential-oracle/after
 Rscript tools/differential-oracle/compare.R outputs/differential-oracle/before.rds outputs/differential-oracle/after.rds
 ```
 
-During Phase 1, any difference other than the explicitly planned build error for
-the complement-universe guard is a regression. From Phase 2 onward, the diff is
-an inventory for human review because some contract changes are intentional.
+A snapshot pair belongs to one implementation step. Treat every difference as a
+regression unless that step explicitly changes the public contract exercised by
+the case; inspect the diff before accepting a new baseline.
 
 The `.rds` files remain ignored under `outputs/`. Do not move real-run artifacts
 or patient-derived data into this directory.

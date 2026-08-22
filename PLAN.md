@@ -178,14 +178,13 @@ Regole del confronto:
   l'universo viene dai task dichiarati, non dai soli gruppi presenti nei dati.
 - `channel_coverage` non viene elevato a baseline: la Fase 3 lo elimina dai
   risultati strutturati.
-- I casi colpiti dal difetto B vengono identificati meccanicamente con il criterio
-  della guardia (`f(FALSE,…,FALSE) = TRUE` e
-  `rank(combine$by) > rank(output$group_by)`) e tracciati a parte: prima
-  restituiscono un valore sbagliato, dopo la Fase 1.2 devono fallire al build. Non
-  entrano nel confronto di uguaglianza per una selezione fatta a occhio.
+- I casi colpiti dal difetto B non entrano nella baseline differenziale iniziale:
+  congelarli prima del roster significherebbe congelare una risposta sbagliata.
+  Dopo il fix, il comportamento corretto è custodito dal test permanente
+  `"fine-grain negation uses the scoped source roster"`.
 
-Nella Fase 1, salvo l'errore intenzionale introdotto dalla guardia del difetto B,
-**un diff è un errore**. Dalla Fase 2 in poi alcuni cambiamenti sono intenzionali:
+Nella Fase 1 **un diff è un errore**. Dalla Fase 2 in poi alcuni cambiamenti sono
+intenzionali:
 il diff diventa l'elenco concreto delle variabili da riesaminare, non un verdetto
 automatico.
 
@@ -275,30 +274,30 @@ obbligatorio della Fase 2 chiuderà poi il contratto di tipo. Questa misura prov
 il costo transitorio del ciclo, non che esso sia la causa dei 25,5 MB trattenuti
 dal risultato completo.
 
-**1.2 — Una guardia che rifiuta le variabili colpite dal difetto B**
+**1.2 — SUPERATA dal roster (2026-08-22). Non si fa.**
 
-Non ripara il difetto: lo **rende visibile**. Trasforma ogni risposta
-silenziosamente sbagliata di quella classe in un errore che compare quando scrivi
-la variabile, prima ancora di eseguirla.
+**Non è stata scritta, ed è la scelta giusta.** La guardia doveva rendere
+visibile una risposta sbagliata finché non arrivava il roster vero. Il roster
+vero è arrivato lo stesso giorno, nella prima fetta della Fase 4: il complemento
+di un combine fine si valuta ora su un universo esplicito
+(`.scoped_roster_universe()`), quindi la classe di variabili che la guardia
+doveva rifiutare adesso **risponde correttamente** invece di essere respinta.
+Scrivere la guardia avrebbe voluto dire cancellarla due commit dopo.
 
-Il test è: prendi l'espressione così com'è scritta, valutala **facendo finta che
-nessun canale abbia trovato niente**. Se il risultato è TRUE, allora esistono
-unità che dovrebbero qualificarsi *proprio perché non hanno evidenza* — ed è
-esattamente il caso in cui il motore oggi non le vede, perché costruisce l'elenco
-delle unità a partire da dove ha trovato qualcosa. Se in più `combine$by` è più
-fine di `output$group_by`, rifiuta.
+**Il criterio però resta vivo, e serve ancora.** Era:
 
-Tre righe in `resolve_variable_spec()`, dove `combine$ast`, `combine$by` e
-`output$group_by` sono già tutti a disposizione, accanto a
-`.check_eltid_identity_domain()` che ha esattamente la stessa forma.
-*[verificato: `R/spec.R:833-854`]*
+> valuta l'espressione facendo finta che nessun canale abbia trovato niente. Se
+> viene TRUE — `f(FALSE,…,FALSE) = TRUE` — esistono unità che si qualificano
+> *proprio perché* non hanno evidenza.
 
-*[misurato]* su dieci espressioni: rifiuta `!a & !b`, `a | !b`, `!a | b`,
-`!(a|b)` a EVTID→PATID; lascia passare `a & !b`, `a | b`, e tutto a grain uguale
-o più grosso. Nessuno dei due revisori è riuscito a costruire un caso che le
-sfugga dentro la classe dichiarata.
+*[misurato]* su dieci espressioni: vale per `!a & !b`, `a | !b`, `!a | b`,
+`!(a|b)`; non vale per `a & !b`, `a | b`.
 
-Si cancella il giorno in cui arriva il roster vero.
+Il criterio non è stato codificato nell'oracolo differenziale: i casi rotti non
+sono stati congelati prima del fix, e oggi il comportamento corretto è custodito
+dal test permanente del roster. Resta un solo uso potenziale:
+**è il criterio giusto per la guardia sul roster incompleto** — vedi la decisione
+aperta in fondo alla Fase 4.
 
 **1.3 — Chiudere il buco del data mask (difetto D)**
 
@@ -322,6 +321,7 @@ passata *come valore* diventa una "colonna mancante":
 | `vapply(split(NUMRES, ELTID), mean, numeric(1))` | `NUMRES, ELTID` | `NUMRES, ELTID, `**`mean`** |
 | `mean(NUMRES, na.rm = T)` | `NUMRES` | `NUMRES, `**`T`** |
 | ``Reduce(`+`, NUMRES)`` | `NUMRES` | `NUMRES, `**`+`** |
+| `weighted.mean(NUMRES, na.rm = opts$remove_missing)` | `NUMRES` | `NUMRES, `**`opts`** |
 
 `vapply(split(NUMRES, ELTID), mean, ...)` è l'idioma "media delle medie per
 ricovero" che il README rimanda esplicitamente. Smetterebbe di compilare.
@@ -335,9 +335,25 @@ Così `mean` passato come argomento resta una funzione e non dà fastidio, mentr
 
 *[verificato]* quella regola segnala `HEIGHT <- 999` e `NUMRE5 <- -1` e lascia
 passare `mean`, `median`, `` `+` ``. `T` viene segnalato, il che è corretto
-perché `T` è ridefinibile, ma è un cambio di comportamento da registrare creando
-`NEWS.md` quando si implementa 1.3: `na.rm = T` è comune e va riscritto
-`na.rm = TRUE`.
+perché `T` è ridefinibile: `na.rm = T` è comune e va riscritto `na.rm = TRUE`.
+
+**Una migrazione in più che la tabella non prevedeva.** L'ultima riga non è una
+funzione: è una **lista di opzioni**, e la regola la segnala giustamente. Non è
+un caso ipotetico — sta nella suite del pacchetto,
+`tests/testthat/test-current-contracts.R:51-56`. Chi implementa 1.3 deve quindi:
+
+- riscrivere quell'uso come `.env$weight_options$remove_missing`;
+- aggiornare il test, che oggi si appoggia al fallback;
+- scrivere la rottura in `NEWS.md`.
+
+La regola resta quella approvata: **funzioni nude ammesse, nomi di dati nudi =
+colonne, valori e liste esterne richiedono `.env$`.** L'unica cosa che cambia è
+che le liste di configurazione sono una quarta categoria di migrazione accanto a
+`T`, non un'esenzione.
+
+*[verificato]* `.data_mask_references()` **visita** già il lato sinistro di `$`
+(`nowhere$field` restituisce `nowhere`), quindi la regola le intercetta senza
+lavoro aggiuntivo.
 
 Il punto 1.3 chiude soltanto il data mask. `.env$nome` resta l'escape hatch
 esplicita per un valore esterno; le funzioni restano normale codice di authoring.
@@ -652,6 +668,12 @@ chiave, cosa che l'interfaccia attuale degli esecutori non permette).
   input testuali pre-retrieved non inventano un universo documentale che non
   possiedono.
 
+La colonna dello stadio si chiama **`furthest_stage`**, non `stage`, perché
+contare le righe della lineage per stadio dà **bucket disgiunti** (una riga
+ferma al pre-selettore è contata lì e in nessun altro posto) mentre
+`audit$counts$stage` è **cumulativo**. Due significati, due nomi: è la stessa
+ambiguità del difetto C, evitata prima di spedirla.
+
 Restano da sostituire i vecchi frame durante l'esecuzione — in particolare la
 relazione totale di stato e le osservazioni usate per il confine pre/post filtro
 — e da rendere pigro il payload: **la Fase 4 non è chiusa**.
@@ -730,8 +752,46 @@ esecutore giri, e non tocca nessun contratto di esecutore. *[verificato]* tutte 
 quattro le sorgenti registrate portano PATID/EVTID/ELTID, e `.document_index()`
 trasforma già un tCorpus in quel frame.
 
-La guardia della Fase 1.2 resta comunque giustificata — è tre righe e converte
-risposte sbagliate in errori — ma **non per quella ragione**.
+La guardia della Fase 1.2 non è stata scritta: il roster è arrivato prima, e la
+classe di variabili che doveva rifiutare adesso risponde correttamente.
+
+**Due decisioni aperte, da prendere prima di chiudere la Fase 4.**
+
+**a) La crescita della lineage va misurata sul profilo vero.** *[misurato]* su
+300 righe sorgente e 10 task EVTID:
+
+| `search_within` | righe di lineage | lineage | risultato totale |
+|---|---:|---:|---:|
+| `PATID` | 3 000 | 0,352 MB | 0,376 MB |
+| `EVTID` | 300 | 0,094 MB | 0,118 MB |
+
+La moltiplicazione **righe × task** è confermata: `pre_selector` è l'unico stadio
+la cui cardinalità non è limitata da niente che l'autore abbia dichiarato — tutti
+gli altri sono ritagliati dal selettore. A questa scala non è un problema, ma
+**la Fase 4 non può dichiarare di aver abbattuto i 25,5 MB finché lo stesso
+benchmark non gira sul profilo reale.**
+
+Non si sostituiscono le righe con soli conteggi adesso: si perderebbe l'audit per
+artefatto, che è il motivo per cui la relazione esiste. Prima si misura; solo se
+la misura lo impone si valuta una rappresentazione fattorizzata.
+
+**b) La guardia sul roster incompleto è più conservativa del necessario.**
+*[verificato]* a `ELTID` conta soltanto la sorgente del canale, quindi un input
+testuale pre-recuperato estraneo **non** blocca un combine sulla sola biologia —
+`.roster_units_for_channel()` è corretto lì. A `PATID`/`EVTID` invece richiede
+che **tutte** le sorgenti della run siano enumerabili, ed è una scelta
+deliberata: l'universo condiviso serve a trovare unità che non hanno righe nelle
+sorgenti partecipanti.
+
+Ma per le espressioni positive quella severità non compra niente. Regola
+possibile, ed è **lo stesso criterio della vecchia 1.2 riusato nel posto giusto**:
+
+> - se `f(FALSE,…,FALSE) = TRUE`, un roster incompleto può cambiare la risposta
+>   → fallire;
+> - altrimenti le unità invisibili non possono qualificarsi comunque → la
+>   sorgente non enumerabile si può ignorare.
+
+Da trattare come decisione esplicita, non come blocco immediato.
 
 ---
 
@@ -802,8 +862,9 @@ insistito che un rilievo "assorbito per omissione" è peggio di uno rifiutato.
 
 ```
 Fase 0   comparatore prima/dopo su fixture sintetiche; normalizzazione fail-fast
-Fase 1   1.1 vettorizzare  →  1.2 guardia  →  1.3 data mask  →  1.4 dichiarare
+Fase 1   1.1 vettorizzare  →  1.3 data mask (APERTO)  →  1.4 dichiarare
          il limite del manifest  →  1.5-1.10 sottrazioni e correzioni
+         [1.2 superata dal roster: non si fa]
 Fase 2   search_within OBBLIGATORIO per OGNI canale, con PATID/EVTID;
          ptype obbligatorio nella stessa migrazione di authoring
 Fase 3   eliminare channel_coverage strutturato e i due rami di default;
@@ -820,3 +881,9 @@ Dentro la Fase 1, **1.1, 1.5, 1.6, 1.7 e 1.8 sono indipendenti** fra loro e da
 tutto il resto: si possono fare in qualsiasi ordine. Il punto 1.10 deve precedere
 la prima preparazione costosa delle sorgenti; 1.4 è una dichiarazione di confine,
 non plumbing da coordinare con 1.3.
+
+**Stato al 2026-08-22.** Fasi 0, 1 (tranne 1.3), 2, 3 e 3b sono committate sul
+ramo `phase-0-cleanup`, che non è ancora entrato in `master`; la
+Fase 4 è a tre fette su cinque. **Il punto 1.3 è l'unica voce della Fase 1
+ancora aperta, ed è l'unico difetto conosciuto che pubblica un valore falso.**
+Va chiuso prima di riprendere la Fase 4.

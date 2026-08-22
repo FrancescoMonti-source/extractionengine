@@ -503,9 +503,10 @@ results$mean_k_in_qualified_stays$audit$counts |>
   filter(PATID == "P1", channel == "potassium_rows")
 ```
 
-`lineage` keeps only artifact coordinates and the furthest stage each artifact
-reached: pre-selector, window, selected, model-input, used, or cited. Structured
-rows retain one identity through those stages; searchable documents remain
+`lineage` keeps only artifact coordinates and the `furthest_stage` each artifact
+reached: pre-selector, window, selected, model-input, used, or cited. That
+column partitions the artifacts; `audit$counts$stage` accumulates them.
+Structured rows retain one identity through those stages; searchable documents remain
 distinct from the task-local snippets they generate. Raw executor frames and
 copied source payload are not returned.
 

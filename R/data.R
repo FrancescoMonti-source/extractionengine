@@ -296,8 +296,9 @@ EE_SOURCE_PREPARERS <- list(
     biology = .prepare_biology_view)
 
 # A run-level roster enumerates source units before selectors execute. It keeps
-# source membership because ELTID is only comparable inside one source; PATID and
-# EVTID remain shared domains across every source supplied to the run.
+# source membership because an ELTID complement is scoped to the participating
+# source even though ELTID identities are globally unique; PATID and EVTID remain
+# shared domains across every source supplied to the run.
 .empty_execution_roster_rows <- function() {
     tibble::tibble(
         source = character(), PATID = character(), EVTID = character(),

@@ -64,10 +64,13 @@ contract is revised.
 \code{audit} contains a long \code{counts} table (grain keys, \code{channel},
 \code{stage}, \code{unit}, \code{n}), a coordinate-only \code{lineage} table,
 \code{llm_calls}, and a resolved \code{execution_manifest}. \code{lineage}
-records the furthest stage reached by each source row, searchable document, or
-task-local snippet: \code{pre_selector}, \code{window}, \code{selected},
-\code{model_input}, \code{used}, or \code{cited}. Later stages imply earlier
-stages of the same artifact; artifacts are not duplicated as an event log.
+records in \code{furthest_stage} the furthest stage reached by each source row,
+searchable document, or task-local snippet: \code{pre_selector},
+\code{window}, \code{selected}, \code{model_input}, \code{used}, or
+\code{cited}. Counting lineage rows by \code{furthest_stage} yields disjoint
+buckets; \code{audit$counts$stage} is cumulative, which is why the two columns
+do not share a name. Later stages imply earlier stages of the same artifact;
+artifacts are not duplicated as an event log.
 Documents remain distinct from the snippets they generate. Lineage retains
 source identity, snippet position, and a source-row reference without copying
 source payload. Pre-retrieved text inputs begin at their stored snippets because

@@ -208,10 +208,63 @@ DifferentialFakeChat <- R6::R6Class(
         evidence_columns = c("source_EVTID", "ELTID"))
 }
 
-differential_cases <- function() {
+# Phase 2 made search_within mandatory, which removed defect A: the engine used
+# to infer the search boundary and a stay's answer could move with the cohort.
+# These three runs freeze that fix. The signal exists only on E2, so the same
+# stay E1 must answer the same way whether or not E2 is in the cohort, and the
+# declared boundary -- not the engine -- must decide whether E1 sees it at all.
+.declared_scope_cases <- function() {
+    biology <- tibble::tibble(
+        PATID = "P1",
+        EVTID = "E2",
+        ELTID = "BIO-31",
+        DATEXAM = as.Date("2026-05-02"),
+        TYPEANA = "K.K",
+        NUMRES = 4.5,
+        STRRES = NA_character_)
+    potassium <- concept_spec(
+        "synthetic scoped potassium",
+        channels = list(result = lab_channel(selector = analyte("K.K"))))
+    scoped_variable <- function(name, search_within) {
+        variable_spec(
+            name = name,
+            channels = list(result = use_channel(
+                "result", concept = potassium, search_within = search_within)),
+            output = bin_output(group_by = "EVTID"))
+    }
+    stay <- function(...) tibble::tibble(PATID = "P1", EVTID = c(...))
+    run <- function(name, search_within, cohort) {
+        run_variable(
+            scoped_variable(name, search_within),
+            cohort = cohort,
+            sources = list(biology = biology))
+    }
+    envelope <- function(run) {
+        list(
+            run = run,
+            value_columns = "value",
+            evidence_columns = c("source_EVTID", "ELTID"))
+    }
+
     list(
-        structured_lab_empty_task = .structured_lab_empty_task(),
-        same_element_combine = .same_element_combine(),
-        text_llm = .text_llm_case(),
-        document_date = .document_date_case())
+        # E1 owns no biology row. Under search_within = "PATID" it answers 1,
+        # and that answer must not depend on E2 being enumerated beside it.
+        declared_scope_patient_narrow = envelope(run(
+            "synthetic_patient_scope", "PATID", stay("E1"))),
+        declared_scope_patient_wide = envelope(run(
+            "synthetic_patient_scope", "PATID", stay("E1", "E2"))),
+        # Same data, same cohort, boundary declared one level finer: E1 must
+        # answer 0. If these two ever agree, the declaration stopped mattering.
+        declared_scope_event = envelope(run(
+            "synthetic_event_scope", "EVTID", stay("E1", "E2"))))
+}
+
+differential_cases <- function() {
+    c(
+        list(
+            structured_lab_empty_task = .structured_lab_empty_task(),
+            same_element_combine = .same_element_combine(),
+            text_llm = .text_llm_case(),
+            document_date = .document_date_case()),
+        .declared_scope_cases())
 }

@@ -255,9 +255,12 @@ two values are equal.
 
 `audit$lineage` is the common coordinate-only activation relation. One row
 places one `source_row`, searchable `document`, or task-local `snippet` at the
-furthest stage it reached: `pre_selector`, `window`, `selected`, `model_input`,
-`used`, or `cited`. Later stages imply earlier stages of the same artifact; an
-artifact is not duplicated as an event log. Documents and snippets remain
+`furthest_stage` it reached: `pre_selector`, `window`, `selected`,
+`model_input`, `used`, or `cited`. The column is not called `stage` because
+`audit$counts$stage` is cumulative while `furthest_stage` partitions: counting
+lineage rows by it gives disjoint buckets that sum to the artifact total. Later
+stages imply earlier stages of the same artifact; an artifact is not duplicated
+as an event log. Documents and snippets remain
 distinct because retrieval is one-to-many. Target grain keys remain distinct
 from `source_PATID`/`source_EVTID`/`source_ELTID`; `source_row_ref` resolves
 against the caller-owned source snapshot and `artifact_position` records snippet
