@@ -297,8 +297,9 @@ EE_SOURCE_PREPARERS <- list(
 
 # A run-level roster enumerates source units before selectors execute. It keeps
 # source membership because an ELTID complement is scoped to the participating
-# source even though ELTID identities are globally unique; PATID and EVTID remain
-# shared domains across every source supplied to the run.
+# source -- only elements of that source could have carried the signal -- even
+# though ELTID identities are globally unique; PATID and EVTID remain shared
+# domains across every source supplied to the run.
 .empty_execution_roster_rows <- function() {
     tibble::tibble(
         source = character(), PATID = character(), EVTID = character(),
