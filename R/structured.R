@@ -58,13 +58,35 @@
 
 .within_point <- function(t, lo, hi) !is.na(t) & t >= lo & t <= hi
 
-# Find data-column references without evaluating author code. Bare names resolve
-# against the prepared columns first and then the quosure environment; explicit
-# .data accesses always name prepared columns. This makes a misspelled column fail
-# even when the selector happens to produce zero target rows.
+# Find data-column references without evaluating author code. A bare name always
+# means a prepared-source column. The one exception is a name whose nearest
+# ordinary lexical binding is a function: `mean` handed to `vapply()`, an
+# operator handed to `Reduce()`, an authored helper -- those are author code,
+# not data. Active and lazy bindings are not forced during validation. Every
+# other object the quosure environment happens to carry must be read explicitly
+# through `.env$`, or a misspelled column that collides with a session binding
+# publishes that binding's value with genuine evidence rows attached to it.
+# Explicit .data accesses always name prepared columns. The walk is static, so a
+# misspelled column fails even when the selector produces zero target rows.
 .data_mask_references <- function(expression) {
     env <- rlang::quo_get_env(expression)
     required <- character()
+
+    is_function_binding <- function(name) {
+        binding_env <- env
+        while (!identical(binding_env, emptyenv())) {
+            if (rlang::env_has(binding_env, name, inherit = FALSE)) {
+                if (rlang::env_binding_are_active(binding_env, name) ||
+                    rlang::env_binding_are_lazy(binding_env, name)) {
+                    return(FALSE)
+                }
+                return(is.function(rlang::env_get(
+                    binding_env, name, inherit = FALSE)))
+            }
+            binding_env <- rlang::env_parent(binding_env)
+        }
+        FALSE
+    }
 
     resolve_pronoun_key <- function(node, pronoun) {
         key <- if (is.character(node) && length(node) == 1L) {
@@ -97,7 +119,7 @@
         if (rlang::is_symbol(node)) {
             name <- rlang::as_string(node)
             if (name %in% c(".data", ".env", locals) ||
-                rlang::env_has(env, name, inherit = TRUE)) {
+                is_function_binding(name)) {
                 return(locals)
             }
             required <<- c(required, name)
@@ -217,7 +239,9 @@
         stop(what, " for channel '", field,
              "' references missing prepared-source column(s): ",
              paste(missing, collapse = ", "), ". Available columns: ",
-             paste(columns, collapse = ", "), ".", call. = FALSE)
+             paste(columns, collapse = ", "),
+             ". A bare name is a prepared-source column; read an external ",
+             "value with .env$name.", call. = FALSE)
     }
     invisible(TRUE)
 }

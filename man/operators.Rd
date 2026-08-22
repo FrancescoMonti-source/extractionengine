@@ -64,9 +64,12 @@ membership or a hit-set decision. \code{from_channel()} publishes an explicitly
 named activation payload.
 }
 \details{
-Data-masked expressions see prepared-source columns as bare names. \code{.data}
-supports programmatic column selection and \code{.env} disambiguates captured
-external values. Missing values remain aligned and are not removed automatically.
+Data-masked expressions see prepared-source columns as bare names, and a bare
+name means such a column even when the authoring environment binds that name;
+only names whose nearest ordinary lexical binding is a function are resolved
+from that environment. \code{.data} supports programmatic column selection and
+\code{.env$name} reads an external value. Missing values remain aligned and are
+not removed automatically.
 When no payload row remains, \code{value} is not evaluated and the result is a
 typed missing value created from \code{ptype}. Otherwise it must return one
 atomic scalar or one list cell castable to \code{ptype}; longer or dimensional

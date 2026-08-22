@@ -326,9 +326,10 @@ passata *come valore* diventa una "colonna mancante":
 `vapply(split(NUMRES, ELTID), mean, ...)` è l'idioma "media delle medie per
 ricovero" che il README rimanda esplicitamente. Smetterebbe di compilare.
 
-La regola giusta è **una sottrazione più una condizione**: un nome trovato nella
-sessione viene ignorato — cioè non conta come colonna richiesta — **solo se è una
-funzione**. `exists(name, envir = env, mode = "function", inherit = TRUE)`.
+La regola giusta è **una sottrazione più una condizione**: il binding lessicale
+più vicino di un nome viene ignorato — cioè non conta come colonna richiesta —
+**solo se contiene una funzione ordinaria**. Binding active o lazy non vengono
+forzati dalla validazione statica e richiedono `.env$` se usati come valori.
 
 Così `mean` passato come argomento resta una funzione e non dà fastidio, mentre
 `NUMRE5 <- -1` viene beccato.
@@ -358,6 +359,22 @@ lavoro aggiuntivo.
 Il punto 1.3 chiude soltanto il data mask. `.env$nome` resta l'escape hatch
 esplicita per un valore esterno; le funzioni restano normale codice di authoring.
 Non promette di fotografare o rendere riproducibile l'intera sessione R.
+
+**Chiuso il 2026-08-22.** La regola spedita è esattamente quella approvata: un
+nome nudo è una colonna preparata, salvo che il suo binding lessicale ordinario
+più vicino contenga una **funzione** (`R/structured.R`). *[misurato]* sulla
+tabella qui sopra dopo la modifica: `mean`, `` `+` `` e gli helper passati per
+valore restano invisibili al validatore; binding active e lazy non vengono
+forzati;
+`NUMRE5 <- -1`, `HEIGHT <- 999`, `T` e `weight_options` diventano colonne
+mancanti. Le migrazioni effettive sono state due, non quattro:
+`weight_options$remove_missing` → `.env$weight_options$remove_missing` nella
+suite, e la rottura registrata in `NEWS.md`. *[verificato]* nessuna espressione
+di README, DESIGN o delle due vignette si appoggiava al fallback. Il
+comportamento corretto è custodito dal test permanente `"data-masked values
+preserve aligned source rows and one-cell output"`, che ora rifiuta
+`mean(NUMRE5)` con `NUMRE5` in sessione e conserva un helper `stay_mean`
+passato come valore a `vapply()`.
 
 **1.4 — Dichiarare il confine del manifest fino alla Fase 5**
 
@@ -862,7 +879,7 @@ insistito che un rilievo "assorbito per omissione" è peggio di uno rifiutato.
 
 ```
 Fase 0   comparatore prima/dopo su fixture sintetiche; normalizzazione fail-fast
-Fase 1   1.1 vettorizzare  →  1.3 data mask (APERTO)  →  1.4 dichiarare
+Fase 1   1.1 vettorizzare  →  1.3 data mask  →  1.4 dichiarare
          il limite del manifest  →  1.5-1.10 sottrazioni e correzioni
          [1.2 superata dal roster: non si fa]
 Fase 2   search_within OBBLIGATORIO per OGNI canale, con PATID/EVTID;
@@ -882,8 +899,10 @@ tutto il resto: si possono fare in qualsiasi ordine. Il punto 1.10 deve preceder
 la prima preparazione costosa delle sorgenti; 1.4 è una dichiarazione di confine,
 non plumbing da coordinare con 1.3.
 
-**Stato al 2026-08-22.** Fasi 0, 1 (tranne 1.3), 2, 3 e 3b sono committate sul
-ramo `phase-0-cleanup`, che non è ancora entrato in `master`; la
-Fase 4 è a tre fette su cinque. **Il punto 1.3 è l'unica voce della Fase 1
-ancora aperta, ed è l'unico difetto conosciuto che pubblica un valore falso.**
-Va chiuso prima di riprendere la Fase 4.
+**Stato al 2026-08-22.** Fasi 0, 1, 2, 3 e 3b sono committate sul ramo
+`phase-0-cleanup`, che non è ancora entrato in `master`; la Fase 4 è a tre fette
+su cinque. Con 1.3 chiuso **non resta nessun difetto conosciuto che pubblichi un
+valore falso**. Il lavoro aperto è la Fase 4: sostituire `coverage` come
+relazione totale di stato e le `observations` usate per il confine pre/post
+filtro, poi rendere pigro il payload; più le due decisioni di fine fase (crescita
+della lineage sul profilo vero, guardia sul roster incompleto).

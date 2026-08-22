@@ -199,8 +199,12 @@ the complete surviving source rows; the combine then tests whether both signals
 coexist at `EVTID`.
 
 The expressions use the same data-mask vocabulary as dplyr. Bare `NUMRES` is the
-usual form; `.data$NUMRES` makes the source-column lookup explicit and
-`.env$threshold` reads an object from the authoring environment.
+usual form and always names a prepared-source column: a name that is not one of
+those columns is an error, even when the authoring session happens to bind it.
+`.data$NUMRES` makes the source-column lookup explicit and `.env$threshold` reads
+an object from the authoring environment. Functions are the one exception: a
+name whose nearest ordinary lexical binding is a function, such as `mean` handed
+to `vapply()` or an authored helper, stays ordinary code.
 
 ```{r binary-variable}
 ionic_alert_by_stay <- variable_spec(

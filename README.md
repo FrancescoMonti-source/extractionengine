@@ -107,8 +107,11 @@ Here `filter_rows` runs separately inside each task after relational, window, an
 selector filtering. It is evaluated in a data mask where prepared-source columns
 are available as bare names and must return one logical per row; `NA` is treated
 as `FALSE`, and surviving rows stay intact. Use `.data[[column]]` for a
-programmatically selected column and `.env$threshold` to disambiguate an external
-value. `filter_groups`, paired with `use_channel(group_by =)`, is evaluated in
+programmatically selected column. A bare name always means a prepared-source
+column, so an external value must be read with `.env$threshold`; the one
+exception is a name whose nearest ordinary lexical binding is a function, such
+as `mean` handed to `vapply()`, which stays ordinary author code.
+`filter_groups`, paired with `use_channel(group_by =)`, is evaluated in
 the same data mask and must return one non-missing logical per group while
 retaining all surviving rows of accepted groups. That `group_by` is an
 intermediate grouping used only by `filter_groups`; it is not the final output

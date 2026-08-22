@@ -114,8 +114,11 @@ source of final grain. When \code{combine$by} is finer than that grain, a
 combine key or the output key; it must be \code{NULL} in all other grain
 relationships. Execution then proceeds as combine by, filter by qualified,
 group by, and evaluate the output value expression. Prepared-source columns are
-available as bare names in data-masked expressions; \code{.data} supports
-programmatic selection and \code{.env} disambiguates external values.
+available as bare names in data-masked expressions, and a bare name means such a
+column even when the authoring environment binds that name; only names whose
+nearest ordinary lexical binding is a function are resolved from that
+environment. \code{.data} supports programmatic selection and \code{.env$name}
+reads an external value.
 
 For \code{lucene_llm}, authored instructions live in the TypeObject and its
 field descriptions. The engine dynamically adds the optional rationale and an

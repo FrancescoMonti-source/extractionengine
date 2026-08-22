@@ -2385,3 +2385,80 @@ made.
 **Files changed.** `R/lineage.R`, `R/structured.R`, `R/run_variable.R`,
 `tests/testthat/test-current-contracts.R`, `README.md`, `DESIGN.md`, `PLAN.md`,
 `vignettes/getting-started.Rmd`, `man/run_variable.Rd`, and this entry.
+
+## Phase 1.3 data mask closed (2026-08-22)
+
+**Boundary.** This closes the last open Phase 1 item and the only known defect
+that published a false value. It changes how names resolve inside authored
+expressions. It does not photograph the R session: `.env$` stays the explicit
+escape hatch, and recording those values in the manifest remains Phase 5.
+
+**Change.** In `filter_rows`, `filter_groups`, and the `from_channel()` value, a
+bare name is a prepared-source column. The validator walks outward to the first
+lexical binding and ignores the name only when that ordinary binding contains a
+function, so `mean` handed to `vapply()`, an operator handed to `Reduce()`, and
+authored helpers stay author code. It does not skip a nearer scalar to find a
+same-named function farther out, and it does not force active or lazy bindings.
+Every other object the session happens to bind, including values, option lists,
+and `T`, is now reported as a missing prepared-source column, and the error names
+`.env$` as the migration.
+
+**Why not the pure deletion.** Deleting the environment branch outright turns
+every function passed by value into a missing column and breaks
+`vapply(split(NUMRES, ELTID), mean, numeric(1))`, the mean-of-per-stay-means
+idiom the README recommends. The rule is a subtraction plus one condition, as
+PLAN 1.3 specified.
+
+**Migrations.** The suite's `weighted.mean(NUMRES, WEIGHT, na.rm =
+weight_options$remove_missing)` became `.env$weight_options$remove_missing`: an
+option list is a fourth migration category next to `T`, not an exemption. No
+README, DESIGN, or vignette expression used the fallback. The break is recorded
+in `NEWS.md`, and the contract sentence was corrected in `README.md`,
+`DESIGN.md`, `man/variable_spec.Rd`, and `vignettes/getting-started.Rmd`, which
+all still said that `.env` merely *disambiguates* an external value.
+
+**Sentinels.** With `NUMRE5 <- -1` bound in the calling session,
+`mean(NUMRE5)` now fails as a missing prepared-source column instead of
+publishing `-1` with three genuine laboratory rows attached to it as evidence.
+The same test keeps an authored per-stay mean helper compiling. A nearer
+`mean <- -1` is not mistaken for `base::mean`, and a separate safety test proves
+that reference discovery does not execute an active binding.
+
+**Verification.** All 72 current-contract expectations pass with no warnings.
+The seven Phase 0 differential cases are unchanged from `after-realign.rds`.
+A full source build creates both vignettes, and `R CMD check --no-manual
+--no-build-vignettes` finishes with `Status: 1 NOTE`, including tests,
+documentation, and the R code of both vignette sources. No real model call was
+made.
+
+**One wrinkle, recorded rather than branched around.** R lazy-loads package
+exports, so an attached package's function that nothing has used yet is a
+delayed binding, and passing it *by value* inside a data-masked expression is
+reported as a missing column: *[misurato]* `vapply(NUMRES, kable, numeric(1))`
+right after `library(knitr)` reports `kable`, and the same expression is clean
+once anything has forced that binding. It fails loudly and never publishes a
+wrong value, the escape hatch is `.env$kable`, and calling the function as
+`kable(...)` is unaffected because call heads are never data. Forcing package
+bindings but not user promises would remove the session-dependence, and it is
+deliberately not implemented: no authored expression in this repository passes a
+package export by value, and the rule for that branch would be harder to state
+than the wrinkle it removes.
+
+**Where pandoc lives on this machine.** `R CMD build` renders the vignettes only
+when pandoc is reachable, and it is not on `PATH`: it ships inside Positron, at
+`C:/Program Files/Positron/resources/app/quarto/bin/tools`. Point
+`RSTUDIO_PANDOC` and `PATH` at that directory before building from a shell
+outside Positron, or the build stops at "creating vignettes" and a check run on
+the vignette-less tarball adds two spurious `inst/doc` warnings.
+
+**The one NOTE predates this change.** Check reports *"Problems with
+news in 'NEWS.md': No news entries found."* Verified by running
+`tools:::.build_news_db_from_package_NEWS_md()` on `NEWS.md` as committed at
+`accf3dd`: it also returns NULL. R's parser rejects the heading
+`# extractionengine (development version)`; with `# extractionengine 0.1.0` the
+same file parses into five entries. One line, outside Phase 1.3, left for the
+owner because it asserts what 0.1.0 is.
+
+**Files changed.** `R/structured.R`, `tests/testthat/test-current-contracts.R`,
+`NEWS.md`, `README.md`, `DESIGN.md`, `man/variable_spec.Rd`,
+`man/operators.Rd`, `vignettes/getting-started.Rmd`, `PLAN.md`, and this entry.

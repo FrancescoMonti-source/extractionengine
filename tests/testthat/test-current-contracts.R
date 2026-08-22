@@ -52,7 +52,7 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
     weighted_run <- run_variable(
         lab_variable(
             "K.K", stats::weighted.mean(
-                NUMRES, WEIGHT, na.rm = weight_options$remove_missing),
+                NUMRES, WEIGHT, na.rm = .env$weight_options$remove_missing),
             double()),
         cohort, sources = list(biology = biology))
     latest_class_run <- run_variable(
@@ -210,6 +210,37 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
             sources = list(biology = biology)),
         "missing prepared-source column.*task_id")
 
+    # A bare name is a prepared-source column even when the calling session
+    # happens to bind that name. A typo for NUMRES used to publish the session
+    # object as the variable's value, with genuine laboratory rows attached to
+    # it as its evidence.
+    NUMRE5 <- -1
+    expect_error(
+        run_variable(
+            lab_variable("K.K", mean(NUMRE5), double()), cohort,
+            sources = list(biology = biology)),
+        "missing prepared-source column.*NUMRE5")
+
+    # Functions are the single exception, so an authored helper passed by value
+    # stays author code and the mean-of-per-stay-means idiom still compiles.
+    stay_mean <- function(x) base::mean(x, na.rm = TRUE)
+    stay_means_run <- run_variable(
+        lab_variable(
+            "K.K",
+            mean(vapply(split(NUMRES, EVTID), stay_mean, numeric(1))),
+            double()),
+        cohort, sources = list(biology = biology))
+    expect_identical(stay_means_run$values$value, base::mean(c(4.2, 5.1)))
+
+    # Function lookup must respect the nearest binding. `exists(...,
+    # mode = "function")` incorrectly skips this scalar and finds base::mean.
+    mean <- -1
+    expect_error(
+        run_variable(
+            lab_variable("K.K", mean, double()), cohort,
+            sources = list(biology = biology)),
+        "missing prepared-source column.*mean")
+
     expect_error(
         variable_spec(
             name = "missing_scope",
@@ -226,6 +257,27 @@ test_that("data-masked values preserve aligned source rows and one-cell output",
             output = from_channel(
                 "result", group_by = "PATID", value = mean(NUMRES))),
         "must declare ptype")
+})
+
+test_that("data-mask validation does not execute active bindings", {
+    reads <- 0L
+    env <- rlang::env(parent = baseenv())
+    rlang::env_bind_active(
+        env,
+        active_helper = function(value) {
+            reads <<- reads + 1L
+            base::mean
+        })
+    expression <- rlang::new_quosure(
+        quote(vapply(NUMRES, active_helper, numeric(1))), env)
+    references <- getFromNamespace(
+        ".data_mask_references", "extractionengine")(expression)
+
+    expect_identical(
+        list(references = references, active_binding_reads = reads),
+        list(
+            references = c("NUMRES", "active_helper"),
+            active_binding_reads = 0L))
 })
 
 test_that("relational keys control qualification, evidence, and broadcast", {

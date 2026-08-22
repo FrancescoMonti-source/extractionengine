@@ -33,6 +33,25 @@ migration.
   is gone from `inspect()`/`print()` output. **Migration:** delete the argument;
   nothing read it.
 
+* In data-masked expressions — `filter_rows`, `filter_groups`, and the
+  `from_channel()` value — a bare name now always means a prepared-source
+  column. It used to fall back to the authoring environment, so a misspelled
+  column that happened to match an object in the session published that
+  object's value, labelled complete, with genuine source rows attached to it as
+  its evidence: `mean(NUMRE5)` with `NUMRE5 <- -1` in the session published
+  `-1`. The single exception is a name whose nearest ordinary lexical binding
+  is a *function*, which is author code rather than data, so
+  `vapply(split(NUMRES, ELTID), mean, numeric(1))` and
+  ``Reduce(`+`, NUMRES)`` are unchanged. **Migration:** read every external
+  value through `.env$`, including option lists
+  (`.env$weight_options$remove_missing`). Write `na.rm = TRUE` rather than
+  `na.rm = T`: `T` is a redefinable binding, not a literal, so it is now
+  reported as a missing column. Active and delayed bindings passed as values
+  also require `.env$`; validation never forces them. An export of an attached
+  package that nothing has used yet is such a delayed binding, so
+  `vapply(NUMRES, kable, numeric(1))` needs `.env$kable`, while calling it as
+  `kable(...)` is unaffected.
+
 ## Breaking changes to results
 
 * `channel_coverage` is no longer published for structured activations. The

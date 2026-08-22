@@ -75,8 +75,11 @@ Operational row, group, and time rules also belong to the activation:
 - `filter_groups`, paired with `use_channel(group_by =)`, runs on those survivors
   in the same data mask and returns exactly one non-missing logical per group
   while retaining all surviving rows of accepted groups. `.data` supports
-  programmatic column selection and `.env` disambiguates captured external
-  values. This is an intermediate activation-local grouping only; it never sets
+  programmatic column selection. A bare name is always a prepared-source column,
+  so a captured external value is read with `.env$name`; only a name whose
+  nearest ordinary lexical binding is a function still resolves from the
+  authoring environment. This is an intermediate activation-local grouping
+  only; it never sets
   the published grain, which belongs exclusively to the output constructor.
 
 A character `anchor` is the exact date column supplied by the cohort. The engine
