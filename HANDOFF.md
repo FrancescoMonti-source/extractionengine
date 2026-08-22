@@ -2115,3 +2115,26 @@ vignettes, passes; `R CMD check --no-manual --no-build-vignettes` finishes with
 
 **Files changed.** `R/spec.R`, `README.md`, `DESIGN.md`,
 `tests/testthat/test-current-contracts.R`, `man/operators.Rd`, and this entry.
+
+## Phase 1.10 spec preflight before source preparation (2026-08-22)
+
+**Decision.** `run_protocol()` resolves every variable spec after validating the
+protocol list and its names, but before preparing any source. An authoring error
+anywhere in the protocol must fail before cohort-wide normalization begins.
+
+**Change.** One preflight `lapply(variables, resolve_variable_spec)` now precedes
+`.prepare_execution_sources()`. `run_variable()` deliberately resolves again at
+execution time: resolution is cheap, and keeping the preflight independent avoids
+a second internal execution path or a new contract for pre-resolved variables.
+
+**Verification.** A disposable probe traced source preparation to fail with
+`PREP_CALLED` and supplied a semantically invalid second spec. Before the change,
+`PREP_CALLED` won; afterwards the selector/channel incompatibility failed first,
+proving that preparation was not reached. All 46 current-contract expectations
+pass, and the Phase 0 oracle is unchanged in all four cases. A full source build,
+including both vignettes, passes; `R CMD check --no-manual
+--no-build-vignettes` finishes with `Status: OK` and executes both vignette
+sources successfully. No mock-only permanent test was added.
+
+**Files changed.** `R/run_variable.R` and this entry. Output values, source
+preparation, and the public authoring API are unchanged.

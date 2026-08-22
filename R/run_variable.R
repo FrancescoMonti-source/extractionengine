@@ -2012,6 +2012,11 @@ run_protocol <- function(variables, cohort = NULL, sources = NULL,
         }
     }
 
+    # Reject every invalid authoring spec before source normalization begins.
+    # run_variable() resolves again at execution time; that cheap duplicate keeps
+    # this preflight independent of the execution contract.
+    invisible(lapply(variables, resolve_variable_spec))
+
     # Every variable of a protocol answers about the same declared subject list,
     # so source normalization is a protocol-level cost, not a per-variable one.
     # Prepare once here; .prepare_execution_sources() then passes the marked
