@@ -1595,125 +1595,106 @@
 }
 
 # --- resolved execution manifest (DESIGN §12, invariant 27) --------------------
-# `run$audit$execution_manifest` is a serializable snapshot of the RESOLVED
-# definition that actually executed (post catalog-default / activation-override
-# inheritance) plus the execution facts the engine knows (timestamp and resolved
-# source-role mappings). It is assembled from
-# resolve_variable_spec(), so the audit trail and the executor read the SAME
-# resolution -- a trail recording the catalog baseline while the executor ran a
-# local override would be a silent audit lie no review of the values can catch.
-# Per-call LLM details (provider/seed/prompt/schema/query hashes) already
-# ride on channel_results[[channel]]$attempts and are not duplicated here.
+# `run$audit$execution_manifest` holds, under `spec`, the RESOLVED definition
+# that actually executed (post catalog-default / activation-override
+# inheritance), and beside it the facts only the execution knows: the resolved
+# source-role bindings, the roster provenance, and the timestamp. The definition
+# is taken from resolve_variable_spec(), so the audit trail and the executor
+# read the SAME resolution -- a trail recording the catalog baseline while the
+# executor ran a local override would be a silent audit lie no review of the
+# values can catch. Per-call LLM details (provider/seed/prompt/schema/query
+# hashes) already ride on channel_results[[channel]]$attempts and are not
+# duplicated here.
 
-# Snapshot a selector as a plain named list (kind + identity fields, NULLs dropped):
-# a serializable record, not a live spec object.
-.manifest_selector <- function(selector) {
-    if (is.null(selector)) return(NULL)
-    snap <- unclass(selector)
-    attributes(snap) <- list(names = names(snap))
-    snap <- snap[!vapply(snap, is.null, logical(1))]
-    # Closure members are deparsed, like the anchor's select_event and activation
-    # row/group filters -- the audit trail
-    # carries the rule as serializable text, not a live function object.
-    fns <- vapply(snap, is.function, logical(1))
-    snap[fns] <- lapply(snap[fns], function(f) paste(deparse(f), collapse = " "))
-    snap
+# One recursive snapshot of the resolved definition. Author code -- the
+# data-masked quosures, the select_event closure, the validated combine AST --
+# becomes one line of text, because the manifest is a serializable record and
+# not a replay capsule for the authoring environment. Everything else a resolved
+# spec carries is an atomic vector, a response schema object, or a classed list
+# to descend into. The walk is generic on purpose: a new use_channel() argument
+# reaches the manifest without this function being edited.
+.manifest_snapshot <- function(x) {
+    if (is.null(x)) return(NULL)
+    if (rlang::is_quosure(x) || is.function(x) || is.call(x) ||
+        rlang::is_symbol(x)) {
+        return(.one_line(x))
+    }
+    # A generic walk would otherwise carry a live environment -- an R6 object,
+    # a Chat, a closure environment reached as a value -- straight into the
+    # audit trail. The manifest is a serializable record of the definition, not
+    # a capsule of the authoring session, so this fails instead of embedding it.
+    if (is.environment(x)) {
+        stop("The execution manifest cannot record an environment.",
+             call. = FALSE)
+    }
+    if (!is.list(x)) return(x)
+    snapshot <- lapply(unclass(x), .manifest_snapshot)
+    snapshot[!vapply(snapshot, is.null, logical(1))]
 }
 
+# An anchor is a discriminated union -- an index-event definition or the name of
+# a cohort column -- and only its class tells the two apart. Name the branch
+# before the snapshot unclasses it away.
 .manifest_anchor <- function(anchor) {
     if (is.null(anchor)) return(NULL)
-    if (inherits(anchor, "ee_index_event")) {
-        # The EXECUTED anchor column: the declared `at`, or the source's
-        # windowing clock it defaults to.
-        return(list(kind = "index_event", source = anchor$source,
-                    selector = .manifest_selector(anchor$selector),
-                    at = anchor$at %||%
-                        (if (anchor$source %in% names(EE_SOURCES)) {
-                            EE_SOURCES[[anchor$source]]$source_time_start
-                        } else NULL),
-                    # The executed multi-match rule, serialized like authored
-                    # data-masked expressions.
-                    select_event = if (is.function(anchor$select_event)) {
-                        paste(deparse(anchor$select_event), collapse = " ")
-                    } else NULL))
+    if (!inherits(anchor, "ee_index_event")) {
+        return(list(kind = "cohort_column", column = as.character(anchor)))
     }
-    list(kind = "cohort_column", column = as.character(anchor))
+    # The EXECUTED anchor column: the declared `at`, or the source's registered
+    # windowing clock it defaults to.
+    anchor$at <- anchor$at %||%
+        (if (anchor$source %in% names(EE_SOURCES)) {
+            EE_SOURCES[[anchor$source]]$source_time_start
+        } else NULL)
+    c(list(kind = "index_event"), unclass(anchor))
+}
+
+# Which physical column each source role resolved to. A role binding belongs to
+# the source contract rather than to the activation, so it is recorded once per
+# source instead of copied into every alias that reads it. A text channel binds
+# two further roles at the channel runtime, because the snippet payload is not
+# part of the typed tCorpus metadata view and no source contract names it.
+.manifest_sources <- function(variable) {
+    source <- unname(vapply(
+        variable$channels, function(ch) ch$source, character(1)))
+    type <- unname(vapply(
+        variable$channels, function(ch) ch$type, character(1)))
+    snapshot <- lapply(unique(source), function(name) {
+        spec <- EE_SOURCES[[name]]
+        list(
+            roles = if (is.null(spec)) NULL else source_roles(spec),
+            runtime_roles = if (any(type[source == name] == "text")) {
+                list(text = "snippet_text", evidence_ref = "hit_ref")
+            } else NULL)
+    })
+    names(snapshot) <- unique(source)
+    .manifest_snapshot(snapshot)
 }
 
 .build_execution_manifest <- function(variable, roster = NULL) {
-    channels <- lapply(variable$channels, function(ch) {
-        spec <- if (ch$source %in% names(EE_SOURCES)) EE_SOURCES[[ch$source]]
-                else NULL
-        list(
-            alias = ch$name,
-            origin_concept = ch$origin_concept,
-            origin_channel = ch$origin_channel,
-            origin_kind = ch$origin_kind,
-            type = ch$type,
-            source = ch$source,
-            source_roles = if (is.null(spec)) NULL else source_roles(spec),
-            runtime_roles = if (identical(ch$type, "text")) {
-                list(text = "snippet_text", evidence_ref = "hit_ref")
-            } else NULL,
-            required_roles = ch$required_roles,
-            search_within = ch$search_within,
-            original_selector = .manifest_selector(ch$original_selector),
-            effective_selector = .manifest_selector(ch$selector),
-            selector_source = ch$selector_source,
-            filter_rows = if (!is.null(ch$filter_rows)) {
-                .one_line(ch$filter_rows)
-            } else NULL,
-            window = if (inherits(ch$window, "ee_window")) {
-                list(from_days = ch$window$from_days,
-                     to_days = ch$window$to_days,
-                     relation = ch$window$relation)
-            } else NULL,
-            method = ch$method,
-            response = ch$response,
-            user_prompt = ch$user_prompt,
-            system_prompt = if (identical(ch$method, "lucene_llm")) {
-                ch$system_prompt %||% DEFAULT_LLM_SYSTEM_PROMPT
-            } else NULL,
-            rationale = ch$rationale,
-            max_candidates = ch$max_candidates,
-            group_by = ch$group_by,
-            filter_groups = if (!is.null(ch$filter_groups)) {
-                .one_line(ch$filter_groups)
-            } else NULL)
+    # The engine sends its own system prompt when an LLM activation does not
+    # author one, so the manifest records the text that ran rather than the
+    # authored silence.
+    variable$channels <- lapply(variable$channels, function(ch) {
+        if (identical(ch$method, "lucene_llm")) {
+            ch$system_prompt <- ch$system_prompt %||% DEFAULT_LLM_SYSTEM_PROMPT
+        }
+        ch
     })
-    output <- if (is.null(variable$output)) NULL else {
-        out <- list(kind = variable$output$kind)
-        if (!is.null(variable$output$channel)) out$channel <- variable$output$channel
-        if (!is.null(variable$output$value)) {
-            out$value <- .one_line(variable$output$value)
-        }
-        if (!is.null(variable$output$ptype)) {
-            out$ptype <- variable$output$ptype
-        }
-        if (!is.null(variable$output$filter_by_qualified)) {
-            out$filter_by_qualified <- variable$output$filter_by_qualified
-        }
-        out$group_by <- variable$output$group_by
-        out
-    }
-    combine <- if (inherits(variable$combine, "ee_combiner") &&
-                   identical(variable$combine$kind, "hit_set_expr")) {
-        list(expr = variable$combine$expr, by = variable$combine$by)
-    } else NULL
+    spec <- .manifest_snapshot(variable)
+    spec$anchor <- .manifest_snapshot(.manifest_anchor(variable$anchor))
     structure(
         list(
-            variable = variable$name,
-            anchor = .manifest_anchor(variable$anchor),
-            combine = combine,
-            output = output,
-            channels = channels,
+            spec = spec,
+            sources = .manifest_sources(variable),
             roster = .execution_roster_manifest(roster),
             executed_at = Sys.time()),
         class = c("ee_execution_manifest", "list"))
 }
 
 print.ee_execution_manifest <- function(x, ...) {
-    output <- x$output
+    spec <- x$spec
+    output <- spec$output
     output_label <- output$kind %||% "none"
     if (identical(output$kind, "from_channel")) {
         payload <- if (is.null(output$value)) {
@@ -1724,19 +1705,20 @@ print.ee_execution_manifest <- function(x, ...) {
         output_label <- paste0(output$kind, " from ", payload)
     }
 
-    cat("Execution manifest: ", x$variable, "\n", sep = "")
-    if (!is.null(x$anchor)) {
-        anchor_label <- if (identical(x$anchor$kind, "cohort_column")) {
-            paste0(x$anchor$column, " (provided by cohort)")
+    cat("Execution manifest: ", spec$name, "\n", sep = "")
+    if (!is.null(spec$anchor)) {
+        anchor_label <- if (identical(spec$anchor$kind, "cohort_column")) {
+            paste0(spec$anchor$column, " (provided by cohort)")
         } else {
-            paste0("index event from ", x$anchor$source,
-                   if (is.null(x$anchor$at)) "" else paste0(" at ", x$anchor$at))
+            paste0("index event from ", spec$anchor$source,
+                   if (is.null(spec$anchor$at)) "" else
+                       paste0(" at ", spec$anchor$at))
         }
         cat("  anchor: ", anchor_label, "\n", sep = "")
     }
-    if (!is.null(x$combine)) {
-        cat("  combine: ", x$combine$expr, "\n", sep = "")
-        cat("  combine by: ", x$combine$by, "\n", sep = "")
+    if (!is.null(spec$combine)) {
+        cat("  combine: ", spec$combine$expr, "\n", sep = "")
+        cat("  combine by: ", spec$combine$by, "\n", sep = "")
     }
     cat("  output: ", output_label, "\n", sep = "")
     if (!is.null(output$filter_by_qualified)) {
@@ -1748,8 +1730,8 @@ print.ee_execution_manifest <- function(x, ...) {
     cat("  group by: ", output$group_by, "\n", sep = "")
 
     cat("\nChannels:\n")
-    for (name in names(x$channels)) {
-        channel <- x$channels[[name]]
+    for (name in names(spec$channels)) {
+        channel <- spec$channels[[name]]
         method <- if (is.null(channel$method)) "" else paste0(" / ", channel$method)
         origin <- if (identical(channel$origin_kind, "concept")) {
             paste0("concept:", channel$origin_concept, "/",
@@ -1759,7 +1741,7 @@ print.ee_execution_manifest <- function(x, ...) {
         }
         cat("  ", name, " <- ", origin,
             " [", channel$type, " / ", channel$source, method, "]\n", sep = "")
-        .print_selector(channel$effective_selector, indent = "    ")
+        .print_selector(channel$selector, indent = "    ")
         if (identical(channel$selector_source, "activation")) {
             cat("    selector: activation override\n")
         }

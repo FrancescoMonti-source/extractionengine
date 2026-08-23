@@ -847,24 +847,54 @@ scope e finestre.
 
 ### Fase 5 — il resto
 
-- Riuso dei canali fra variabili, **ristretto al recupero Lucene e alle chiamate
-  al modello**. Il profilo dice che l'esecutore strutturato è il 2,1 % di un run
-  di appartenenza: cachearlo compra ~2 % e aggiunge una superficie di correttezza
-  sulla chiave di cache che dovrebbe includere il selettore risolto, le chiavi di
-  scope, la finestra e ogni semplice parametro esterno esplicitamente supportato.
-  Se una dipendenza non è identificabile — per esempio una closure arbitraria —
-  quel lavoro non è cacheabile. La metà deterministica si taglia.
-- Identità dello snapshot delle sorgenti e versioni di pacchetto/runtime nel
-  manifest. Devono precedere qualunque cache fra variabili.
-- Il manifest **non** serializza l'ambiente R. Registra però i semplici valori
-  atomici letti esplicitamente con `.env$nome`: vengono fotografati una volta
-  prima dell'esecuzione e la stessa fotografia alimenta calcolo e manifest.
-  Funzioni locali, closure, active binding e oggetti arbitrari restano codice di
-  authoring versionato, non payload del manifest.
-- `execution_manifest` come `list(spec = resolved_spec, ...)` invece di una copia
-  a mano di 74 righe: ~130 righe cancellate, e aggiungere un argomento a
-  `use_channel()` passa da cinque siti coordinati a uno. *[verificato: i cinque
-  siti ci sono ancora]*
+Quattro punti, e l'ordine fra loro non è libero: l'identità dello snapshot deve
+precedere qualunque cache fra variabili, e la fotografia dei parametri `.env`
+entra nella chiave di quella cache. Il manifest si semplifica per primo perché
+i due punti successivi lo estendono.
+
+**5.1 — `execution_manifest` come `list(spec = resolved_spec, ...)`. Chiuso il
+2026-08-23.**
+
+Il manifest non copia più la spec risolta campo per campo: la **percorre**. La
+definizione risolta sta sotto `spec`; accanto ci sono i fatti che solo
+l'esecuzione conosce — `sources`, `roster`, `executed_at`.
+
+**Le due stime del piano erano ottimistiche, e la misura le corregge.**
+*[misurato]* la sottrazione netta sotto `R/` è **-22 righe** (103 aggiunte,
+125 cancellate: -18 in `run_variable.R`, -4 in `spec.R`), non ~130.
+*[verificato]* aggiungere un argomento a `use_channel()` richiede ora un edit
+**nella sola `use_channel()`**: provato aggiungendo
+temporaneamente `note = NULL` e osservandolo arrivare in
+`resolve_variable_spec()` e in `manifest$spec$channels$result$note` senza nessun
+altro edit. Prima servivano anche `.resolve_channel_activation()` e
+`.build_execution_manifest()`. Il printer continua a nominare i campi che
+formatta, e continuerà: quello è impaginazione, non plumbing.
+
+**Perché non letteralmente `list(spec = resolved_spec)`.** Una spec risolta
+contiene quosure, la closure `select_event` e l'AST validato del combine.
+Tenerli vivi metterebbe l'ambiente di authoring nel percorso di audit, cosa che
+la Fase 1.4 ha già rifiutato. La camminata è ciò che rende vera «il manifest è
+la spec risolta» senza quel prezzo. Un ambiente raggiunto come valore adesso
+**fallisce** invece di essere incluso in silenzio.
+
+**5.2 — Identità dello snapshot delle sorgenti e versioni di
+pacchetto/runtime nel manifest.** Devono precedere qualunque cache fra
+variabili.
+
+**5.3 — I semplici parametri `.env`.** Il manifest **non** serializza l'ambiente
+R. Registra però i semplici valori atomici letti esplicitamente con `.env$nome`:
+vengono fotografati una volta prima dell'esecuzione e la stessa fotografia
+alimenta calcolo e manifest. Funzioni locali, closure, active binding e oggetti
+arbitrari restano codice di authoring versionato, non payload del manifest.
+
+**5.4 — Riuso dei canali fra variabili, ristretto al recupero Lucene e alle
+chiamate al modello.** Il profilo dice che l'esecutore strutturato è il 2,1 % di
+un run di appartenenza: cachearlo compra ~2 % e aggiunge una superficie di
+correttezza sulla chiave di cache che dovrebbe includere il selettore risolto,
+le chiavi di scope, la finestra e ogni semplice parametro esterno esplicitamente
+supportato — cioè la fotografia della 5.3. Se una dipendenza non è
+identificabile — per esempio una closure arbitraria — quel lavoro non è
+cacheabile. La metà deterministica si taglia.
 
 ---
 
@@ -924,8 +954,8 @@ Fase 3   eliminare channel_coverage strutturato e i due rami di default;
 Fase 3b  provider/modello fuori dal pacchetto
 Fase 4   fetta verticale (strutturato + testo/LLM) → una tabella lunga al posto
          di sei, roster source-qualified, universo in due modi, payload pigro
-Fase 5   riuso Lucene/LLM, identità nel manifest, semplici parametri .env,
-         manifest come resolved_spec
+Fase 5   5.1 manifest come resolved_spec  →  5.2 identità dello snapshot e
+         versioni  →  5.3 semplici parametri .env  →  5.4 riuso Lucene/LLM
 ```
 
 Dentro la Fase 1, **1.1, 1.5, 1.6, 1.7 e 1.8 sono indipendenti** fra loro e da
@@ -934,6 +964,7 @@ la prima preparazione costosa delle sorgenti; 1.4 è una dichiarazione di confin
 non plumbing da coordinare con 1.3.
 
 **Stato al 2026-08-23.** Fasi 0, 1, 2, 3, 3b e 4 sono committate sul ramo
-`phase-0-cleanup`, che non è ancora entrato in `master`. **Non resta nessun
-difetto conosciuto che pubblichi un valore falso**, e tutti gli undici difetti
-della Parte 2 e le decisioni di fine Fase 4 sono chiusi. Resta l'intera Fase 5.
+`phase-0-cleanup`, che non è ancora entrato in `master`, e la Fase 5 è aperta
+con la 5.1 chiusa. **Non resta nessun difetto conosciuto che pubblichi un valore
+falso**, e tutti gli undici difetti della Parte 2 e le decisioni di fine Fase 4
+sono chiusi.

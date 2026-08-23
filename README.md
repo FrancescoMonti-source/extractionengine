@@ -487,11 +487,15 @@ diagnostics, and the raw or partial response, with the same columns when it has
 zero rows. A task that never reaches the model, for example because it has no
 candidate, has no call row. The
 `execution_manifest` is a resolved snapshot of what was configured and executed,
-not a chronological activity log. Its `roster` table records, per supplied
-source and identity level, how many units were enumerated; a pre-retrieved text
-input is marked non-enumerable. Combination runs additionally keep `overlap`,
-a tabular Venn/UpSet-style count of observed `TRUE`/`FALSE`/`NA` channel patterns,
-and `combine_keys`, the key-level relation evaluated at `combine$by`, including
+not a chronological activity log. Its `spec` entry is the resolved definition the
+executor read, with author code — the data-masked expressions, the `select_event`
+closure, the validated combine expression — recorded as text rather than as live
+objects. `sources` records which physical column each source role resolved to.
+The `roster` table records, per supplied source and identity level, how many
+units were enumerated; a pre-retrieved text input is marked non-enumerable.
+Combination runs additionally keep `overlap`, a tabular Venn/UpSet-style count
+of observed `TRUE`/`FALSE`/`NA` channel patterns, and `combine_keys`, the
+key-level relation evaluated at `combine$by`, including
 each channel's membership and the final `qualifies` decision. `overlap` is
 computed from task-level hit patterns; it is not an aggregation of
 `combine_keys`.

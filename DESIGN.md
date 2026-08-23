@@ -309,13 +309,18 @@ the evaluated key-level relation, inside the audit rather than as ordinary
 output tables. Raw executor frames are not returned. The execution manifest has
 a compact print method while retaining its complete machine-readable structure.
 
-The execution manifest and `inspect()` record activation alias,
+The execution manifest and `inspect()` record activation name,
 `origin_concept`, `origin_channel`, source, and inline/catalog origin,
 original and effective selector, row/group filters, activation window,
 `search_within`, `combine$by`, `filter_by_qualified`, `output$group_by`, selected
-output value expression and `ptype`, and response schema. Its `roster` table
-records source-qualified unit counts at `PATID`, `EVTID`, and `ELTID`, including
-whether each supplied source was enumerable.
+output value expression and `ptype`, and response schema. The manifest holds
+that resolved definition under `spec`, obtained by walking the resolved
+specification rather than by copying it field by field, so an activation
+argument cannot be configured and left unrecorded; author code is rendered as
+text and a live environment is refused rather than embedded. Its `sources` entry
+records which physical column each source role resolved to, and its `roster`
+table records source-qualified unit counts at `PATID`, `EVTID`, and `ELTID`,
+including whether each supplied source was enumerable.
 Their output view follows the execution order `combine by -> filter by qualified
 -> group by -> evaluate value`.
 

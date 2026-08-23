@@ -2758,3 +2758,74 @@ differential cases are unchanged from `after-realign.rds`.
 
 **Files changed.** `R/run_variable.R`,
 `tests/testthat/test-current-contracts.R`, `NEWS.md`, `PLAN.md`, and this entry.
+
+## Phase 5.1 the manifest is the resolved spec, walked (2026-08-23)
+
+**Boundary.** The first Phase 5 slice. It changes the shape of
+`audit$execution_manifest` and nothing about any published value.
+
+**Change.** `.build_execution_manifest()` no longer copies the resolved
+specification field by field. It walks it: `.manifest_snapshot()` renders author
+code as text, keeps atomics and the response schema as they are, descends into
+classed lists, and drops fields the author left unset. The resolved definition
+lands under `manifest$spec`; the facts only the execution knows -- `sources`,
+`roster`, `executed_at` -- sit beside it rather than mixed into it.
+`.resolve_channel_activation()` got the same treatment: everything
+`use_channel()` carries beyond the channel it names and the selector it may
+override is spliced into the resolved channel instead of being re-listed.
+
+**Measured, and the plan's estimate was optimistic.** PLAN Phase 5 predicted
+"~130 lines deleted" and "five coordinated sites become one". The real numbers
+are **-22 lines under `R/`** (103 added, 125 removed: -18 in
+`run_variable.R`, -4 in `spec.R`) and this: adding an argument to
+`use_channel()` now needs an edit in `use_channel()` alone. That was
+verified by temporarily adding a `note = NULL` argument -- formals plus its own
+returned list, one function -- and observing it arrive in
+`resolve_variable_spec()` and in `manifest$spec$channels$result$note` with no
+other edit. Before this slice the same argument needed
+`.resolve_channel_activation()` and `.build_execution_manifest()` as well. The
+printer still names the fields it formats, and always will: that is layout, not
+plumbing.
+
+**Why not literally `list(spec = resolved_spec)`.** A resolved spec holds
+quosures, the `select_event` closure, and the validated combine AST. Storing
+them live would put the authoring environment in the audit trail, which Phase
+1.4 already refused. The walk is what makes "the manifest is the resolved spec"
+true without that. A live environment reached as a value is now a **loud
+failure** rather than a silent inclusion: the generic walk would otherwise carry
+an R6 object or a Chat straight into the trail.
+
+**Two executed facts survive the walk, and had to.** The anchor column records
+the source's registered clock when `at` is not authored, and an LLM activation
+that authors no `system_prompt` records the package default. Both are what ran,
+not what was written. The sentinel pins the second one against the executor
+rather than against the constant: it mocks `.call_chat`, captures the
+`system_prompt` actually sent, and asserts the manifest holds that same string.
+A manifest that agreed with the constant but not with the call would be exactly
+the silent audit lie the manifest's own comment warns about.
+
+**Source roles moved and were kept deliberately.** They were copied into every
+alias; they are now one `manifest$sources` entry per source. Keeping them at all
+is a decision, not sediment: `roles` is derivable from the source name plus the
+package version, but `runtime_roles` -- the text channel's `snippet_text` and
+`hit_ref` bindings -- is named nowhere else, and an archived manifest should not
+need a package archive to say which physical column `point_date` was.
+
+**Sentinel.** `"the execution manifest mirrors the resolved spec without live
+objects"` asserts that the manifest channel's field names are exactly the
+resolved channel's configured field names in order, that the data-masked
+expressions and the closure are text, that the anchor records `DATEACTE`, that
+nothing recursively reachable in `spec` is a function, environment, or quosure,
+that `.manifest_snapshot()` refuses an environment, and that the recorded system
+prompt is the sent one.
+
+**Verification.** All 85 current-contract expectations pass with no warnings
+(80 before). The seven Phase 0 differential cases are unchanged from
+`before-phase5.rds`, itself unchanged from `after-realign.rds`. A full source
+build creates both vignettes and `R CMD check --no-manual --no-build-vignettes`
+finishes with `Status: 1 NOTE`, the pre-existing `NEWS.md` heading. No real
+model call was made.
+
+**Files changed.** `R/run_variable.R`, `R/spec.R`,
+`tests/testthat/test-current-contracts.R`, `NEWS.md`, `README.md`, `DESIGN.md`,
+`man/run_variable.Rd`, `PLAN.md`, and this entry.

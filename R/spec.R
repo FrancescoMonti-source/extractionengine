@@ -767,8 +767,14 @@ print.ee_variable_spec <- function(x, ...) {
              "' is incompatible with channel type '", channel_def$type, "'.",
              call. = FALSE)
     }
+    # Beyond the channel it names and the selector it may override, everything
+    # use_channel() carries is activation configuration and belongs to the
+    # resolved channel unchanged. Splicing it keeps a new use_channel() argument
+    # from needing a second edit here.
+    activation <- channel_use[setdiff(
+        names(channel_use), c("channel", "concept", "selector"))]
     .new_spec(
-        list(
+        c(list(
             name = name,
             origin_concept = origin$origin_concept,
             origin_channel = origin$origin_channel,
@@ -779,18 +785,8 @@ print.ee_variable_spec <- function(x, ...) {
             selector = selector,
             selector_source = if (is.null(channel_use$selector))
                 origin$origin_kind else "activation",
-            required_roles = channel_def$required_roles,
-            filter_rows = channel_use$filter_rows,
-            group_by = channel_use$group_by,
-            filter_groups = channel_use$filter_groups,
-            search_within = channel_use$search_within,
-            window = channel_use$window,
-            method = channel_use$method,
-            response = channel_use$response,
-            rationale = channel_use$rationale,
-            user_prompt = channel_use$user_prompt,
-            system_prompt = channel_use$system_prompt,
-            max_candidates = channel_use$max_candidates),
+            required_roles = channel_def$required_roles),
+          activation),
         "ee_resolved_channel")
 }
 

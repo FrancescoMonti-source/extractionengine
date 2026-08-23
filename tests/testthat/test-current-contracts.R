@@ -489,7 +489,7 @@ test_that("relational keys control qualification, evidence, and broadcast", {
     # reuse the same origin-channel name without creating a composite concept.
     expect_identical(
         lapply(
-            event_text_run$audit$execution_manifest$channels,
+            event_text_run$audit$execution_manifest$spec$channels,
             \(channel) channel[c("origin_concept", "origin_channel")]),
         list(
             alpha = list(
@@ -864,7 +864,7 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
         list(
             declared_fields = intersect(
                 c("declared_model", "declared_model_params"),
-                names(run$audit$execution_manifest$channels$text_tabagisme)),
+                names(run$audit$execution_manifest$spec$channels$text_tabagisme)),
             observed_model = run$audit$llm_calls$model),
         list(declared_fields = character(), observed_model = "fake"))
     expect_identical(
@@ -1153,4 +1153,123 @@ test_that("a gated payload activation runs only for qualifying tasks", {
             calls = 1L,
             published = c("fumeur", NA_character_),
             status = c("matched", "not_executed")))
+})
+
+test_that("the execution manifest mirrors the resolved spec without live objects", {
+    biology <- lab_fixture()
+    acts <- tibble::tibble(
+        PATID = "P1", EVTID = "A1", ELTID = "AD1",
+        CODEACTE = "ABCD001", DATEACTE = as.Date("2026-01-03"))
+    potassium <- concept_spec(
+        "potassium",
+        channels = list(result = lab_channel(selector = analyte("K.K"))))
+    upper_limit <- 6
+    variable <- variable_spec(
+        name = "manifest_shape",
+        anchor = index_event(
+            "pmsi_actes", ccam("ABCD001"),
+            select_event = function(rows) rows[1, , drop = FALSE]),
+        channels = list(result = use_channel(
+            "result", concept = potassium, search_within = "PATID",
+            window = c(-Inf, 0),
+            filter_rows = NUMRES < .env$upper_limit,
+            group_by = "EVTID", filter_groups = any(!is.na(NUMRES)))),
+        output = from_channel(
+            "result", group_by = "PATID", value = mean(NUMRES, na.rm = TRUE),
+            ptype = double()))
+    run <- run_variable(
+        variable, cohort = tibble::tibble(PATID = "P1"),
+        sources = list(pmsi_actes = acts, biology = biology))
+    manifest <- run$audit$execution_manifest
+
+    # The manifest walks the resolved spec instead of copying it field by field,
+    # so every configured field arrives in its resolved order. A hand-written
+    # copy is what lets a new use_channel() argument go unrecorded.
+    resolved <- resolve_variable_spec(variable)
+    expect_identical(
+        names(manifest$spec$channels$result),
+        names(Filter(Negate(is.null), unclass(resolved$channels$result))))
+
+    # Author code is recorded as text, and the anchor column is the one that
+    # ran: an authored NULL `at` means the source's registered clock.
+    expect_identical(
+        list(
+            filter_rows = manifest$spec$channels$result$filter_rows,
+            filter_groups = manifest$spec$channels$result$filter_groups,
+            value = manifest$spec$output$value,
+            at = manifest$spec$anchor$at,
+            select_event_is_text = is.character(
+                manifest$spec$anchor$select_event) &&
+                grepl("^function", manifest$spec$anchor$select_event)),
+        list(
+            filter_rows = "NUMRES < .env$upper_limit",
+            filter_groups = "any(!is.na(NUMRES))",
+            value = "mean(NUMRES, na.rm = TRUE)",
+            at = "DATEACTE",
+            select_event_is_text = TRUE))
+
+    # Nothing live survives the snapshot, and an environment reached as a value
+    # fails rather than riding into the audit trail as a session capsule.
+    carries_binding <- function(x) {
+        if (is.function(x) || is.environment(x) || rlang::is_quosure(x)) {
+            return(TRUE)
+        }
+        if (!is.list(x)) return(FALSE)
+        any(vapply(x, carries_binding, logical(1)))
+    }
+    expect_false(carries_binding(manifest$spec))
+    expect_error(
+        .manifest_snapshot(list(session = new.env())),
+        "cannot record an environment")
+
+    # The recorded system prompt is the text the executor sent. An activation
+    # that authors none is run with the package default, and a manifest that
+    # left the field empty would describe the authoring, not the call.
+    sent <- new.env(parent = emptyenv())
+    testthat::local_mocked_bindings(
+        .chat_metadata = function(chat) list(
+            provider = "test", model = "fake", params = list(),
+            temperature = 0, seed = 1L, max_tokens = 100),
+        .call_chat = function(chat, prompt, type, system_prompt, metadata) {
+            sent$system_prompt <- system_prompt
+            list(
+                status = "completed",
+                result = list(smoker = "oui", snippet_ids = "S001"),
+                error = NA_character_, n_tries = 1L, errors = character(),
+                started_at = Sys.time(), latency_ms = 0,
+                partial_response = NA_character_, output_tokens = 10,
+                inferred_finish_reason = "stop")
+        },
+        .package = "extractionengine")
+
+    documents <- list(
+        coverage = tibble::tibble(
+            task_id = "P1", PATID = "P1", EVTID = NA_character_,
+            coverage_state = "candidate"),
+        candidates = tibble::tibble(
+            task_id = "P1", snippet_id = "S001", hit_ref = "H001",
+            PATID = "P1", EVTID = "SOURCE_STAY", ELTID = "D001",
+            snippet_text = "Tabagisme actif documenté.",
+            hit_text = "Tabagisme actif", RECDATE = as.Date("2026-03-01"),
+            RECTYPE = "CR"))
+    llm_run <- run_variable(
+        variable_spec(
+            name = "manifest_prompt",
+            channels = list(text = use_channel(
+                channel = text_channel(selector = lucene_query("taba*")),
+                search_within = "PATID", method = "lucene_llm",
+                rationale = FALSE,
+                response = ellmer::type_object(
+                    smoker = ellmer::type_string("Statut documenté.")))),
+            output = from_channel("text", group_by = "PATID")),
+        cohort = tibble::tibble(PATID = "P1"),
+        sources = list(documents = documents),
+        chat = structure(list(), class = "fake"))
+    expect_identical(
+        list(
+            recorded = llm_run$audit$execution_manifest$spec$channels$text$
+                system_prompt,
+            sent_the_package_default = identical(
+                sent$system_prompt, DEFAULT_LLM_SYSTEM_PROMPT)),
+        list(recorded = sent$system_prompt, sent_the_package_default = TRUE))
 })

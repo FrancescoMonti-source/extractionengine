@@ -103,6 +103,30 @@ migration.
   `audit$counts$stage` is cumulative. The two columns deliberately do not share
   a name.
 
+* `audit$execution_manifest` keeps the resolved definition under `spec` and the
+  execution facts beside it. `manifest$variable`, `$anchor`, `$combine`,
+  `$output`, and `$channels` become `manifest$spec$name`, `$spec$anchor`,
+  `$spec$combine`, `$spec$output`, and `$spec$channels`; `$roster` and
+  `$executed_at` stay where they were. Inside a channel, `alias` is now `name`
+  and `effective_selector` is now `selector`, the names the resolved
+  specification uses. The per-channel `source_roles` and `runtime_roles` copies
+  are replaced by one `manifest$sources` entry per source, because a role
+  binding belongs to the source contract rather than to every alias that reads
+  it. A field the author left unset is now absent instead of present and `NULL`,
+  so `names()` on a manifest channel lists what was configured; reading an unset
+  field still returns `NULL`. **Migration:** insert `$spec` before `anchor`,
+  `combine`, `output`, and `channels`, read the variable name from
+  `$spec$name`, and read role bindings from `manifest$sources`.
+
+* The manifest is now produced by walking the resolved specification instead of
+  copying it field by field, so an activation argument can no longer be present
+  in the definition and absent from the audit trail. Author code is still
+  recorded as text — the data-masked expressions, the `select_event` closure,
+  the validated combine expression — and an object that would drag the authoring
+  session into the trail, such as an environment, is now an error rather than a
+  silent inclusion. The manifest gains `spec$combine$ast`, the expression as the
+  engine parsed it, next to `spec$combine$expr`, the string as authored.
+
 ## Removed exports
 
 * `source_spec()`, `source_roles()`, `validate_source_view()` and

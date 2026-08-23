@@ -95,7 +95,12 @@ separates \code{call_status}, \code{response_status}, \code{task_validity}, and
 diagnostics, and raw or partial response, with a stable schema even at zero rows.
 A task that does not reach the model has no call row.
 \code{execution_manifest} is the
-resolved configuration snapshot, not a chronological log. Its \code{roster}
+resolved configuration snapshot, not a chronological log. Its \code{spec} entry
+is the resolved definition the executor read, obtained by walking that
+specification rather than by copying it field by field, so an activation
+argument cannot be configured and left unrecorded; author code is recorded as
+text and a live environment is refused. \code{sources} records which physical
+column each source role resolved to. Its \code{roster}
 table records source-qualified \code{PATID}, \code{EVTID}, and \code{ELTID} unit
 counts and whether each supplied source was enumerable. It records the
 terminal data flow as combine by, filter by qualified, group by, then evaluate
