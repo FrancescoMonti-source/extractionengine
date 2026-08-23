@@ -65,6 +65,19 @@ migration.
   longer a reserved response field name and is now available to authors. It was
   never part of published `values`.
 
+* A documents source is a `corpustools` `tCorpus`, a prepared document index
+  frame for a `doc_channel()` that runs no query, or a pre-retrieved
+  `{coverage, candidates}` input. The fourth form, a caller-supplied
+  `list(corpus =, docs_index =)` bundle, is gone. Its only capability was to
+  pair a corpus with an index describing different documents, and the engine
+  spent two filters absorbing that disagreement: a task whose documents were
+  all outside the searchable corpus reported `selection_status` as
+  `unavailable`. A tCorpus is now asked for its own metadata, so the index and
+  the corpus cannot disagree and both filters are gone. `unavailable` still
+  reports a task the activation had no universe to search for. **Migration:**
+  pass the `tCorpus` itself; build it with the metadata you want retrieval to
+  see. There is no compatibility adapter.
+
 ## Breaking changes to results
 
 * `channel_coverage` is no longer published for structured activations. The
@@ -91,15 +104,6 @@ migration.
   `not_executed` if you relied on every task having selection rows for every
   channel. An activation the combine references still defines the gate and runs
   for every unit.
-
-* `channel_status$selection_status` reports `unavailable` for a task whose
-  documents are all outside the searchable corpus. This is reachable only
-  through a caller-supplied `list(corpus =, docs_index =)` bundle whose index
-  names documents the corpus does not contain; such a task used to report
-  `no_match`, which claimed the engine had searched documents it cannot read.
-  Published values are unchanged, because an unobserved channel and an observed
-  absence are both non-members of the hit set. **Migration:** none, unless you
-  read `selection_status` for that mismatched-bundle case.
 
 * `audit$lineage` gains a `selector` stage between `window` and `selected`. An
   artifact that matched the channel selector and was then demoted by
@@ -181,8 +185,8 @@ migration.
   and carries the author's other metadata columns through with whatever type
   they had — an integer `PATID` stays integer. The document index restores
   `PATID`/`EVTID` to `character` at that boundary instead. A document source
-  supplied as a prepared frame, or as a `list(corpus, docs_index)` bundle, is
-  taken at its word: it must already be a normalized `redsan` view.
+  supplied as a prepared index frame is taken at its word: it must already be
+  a normalized `redsan` view.
 
 * `source_row_id` is now always created rather than created-when-absent. It is
   the engine's own evidence coordinate, not a source column — no `redsan`

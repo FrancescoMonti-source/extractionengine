@@ -265,9 +265,11 @@
                 eligible = as.character(windowed$coverage$coverage_state) !=
                     "no_eligible_document")))
     }
-    raw <- .raw_document_source(src)
-    if (!is.null(raw)) {
-        return(.retrieve_text_channel(channel_def, variable, tasks, raw, selector))
+    if (.is_tcorpus(src)) {
+        return(.retrieve_text_channel(
+            channel_def, variable, tasks,
+            list(corpus = src, docs_index = .document_index_from_corpus(src)),
+            selector))
     }
     stop("A documents source must be a metadata-rich tCorpus or pre-retrieved ",
          "{coverage, candidates}.", call. = FALSE)
@@ -299,14 +301,10 @@
     keys <- tasks %>% select(all_of(task_columns)) %>% distinct()
     eligibility <- src$docs_index %>%
         inner_join(keys, by = join_keys, relationship = "many-to-many")
-    corpus_ids <- as.character(src$corpus$get_meta("doc_id"))
-    searchable_documents <- function(rows) {
-        rows %>%
-            filter(as.character(ELTID) %in% corpus_ids) %>%
-            .lineage_input_rows("document")
-    }
+    # The index is the corpus's own metadata view, so every eligible document
+    # is readable. There is no searchable/eligible distinction left to draw.
     lineage_inputs <- list(
-        pre_selector = searchable_documents(eligibility))
+        pre_selector = .lineage_input_rows(eligibility, "document"))
     if (!is.null(channel_def$window)) {
         if (!inherits(channel_def$window, "ee_window")) {
             stop("Real retrieval requires a compiled relative window.",
@@ -316,7 +314,7 @@
         eligibility <- eligibility %>%
             filter(RECDATE >= anchor_date + w[["from_days"]],
                    RECDATE <= anchor_date + w[["to_days"]])
-        lineage_inputs$window <- searchable_documents(eligibility)
+        lineage_inputs$window <- .lineage_input_rows(eligibility, "document")
     }
     eligibility <- .text_eligibility_cols(eligibility)
     result <- retrieve(src$corpus, tasks, eligibility, query = selector$query)
@@ -1896,10 +1894,6 @@ cohort_from_sources <- function(sources) {
         if (.is_tcorpus(src)) {
             index <- .document_index_from_corpus(src)
             return(as.character(index$PATID))
-        }
-        if (is.list(src) && is.data.frame(src$docs_index) &&
-            "PATID" %in% names(src$docs_index)) {
-            return(as.character(src$docs_index$PATID))
         }
         character()
     }), use.names = FALSE)

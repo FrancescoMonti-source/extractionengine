@@ -5,7 +5,7 @@ utils::globalVariables(c(
     "context_after", "context_before", "days_from_anchor", "doc_date",
     "doc_id", "evidence_ref", "evidence_refs", "field",
     "field_validity", "hit", "hit_ref", "hit_sentence", "hit_text",
-    "in_corpus", "is_target", "n_fields", "n_invalid",
+    "is_target", "n_fields", "n_invalid",
     "n_valid", "needs_review", "offset",
     "processing_status", "review_reason",
     "selected_evidence", "sentence", "snippet_id", "source_row_id", "status",

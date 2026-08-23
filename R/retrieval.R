@@ -112,9 +112,7 @@ retrieve <- function(corpus, tasks, eligibility, query) {
     unknown <- setdiff(unique(eligibility$task_id), tasks$task_id)
     if (length(unknown)) stop("eligibility references unknown task IDs.", call. = FALSE)
 
-    corpus_ids <- as.character(corpus$get_meta("doc_id"))
-    elig <- eligibility %>% mutate(in_corpus = ELTID %in% corpus_ids)
-    eligible_ids <- unique(elig$ELTID[elig$in_corpus])
+    eligible_ids <- unique(eligibility$ELTID)
 
     if (length(eligible_ids)) {
         sub <- corpus$subset(subset_meta = doc_id %in% eligible_ids, copy = TRUE)
@@ -126,8 +124,7 @@ retrieve <- function(corpus, tasks, eligibility, query) {
         snippets <- .assemble_snippets(NULL, data.frame())
     }
 
-    candidates <- elig %>%
-        filter(in_corpus) %>%
+    candidates <- eligibility %>%
         inner_join(snippets, by = "ELTID", relationship = "many-to-many")
     if ("anchor_date" %in% names(candidates)) {
         recdate <- if (inherits(candidates$RECDATE, "POSIXt")) {

@@ -232,31 +232,16 @@ DOCS_SOURCE <- source_spec(
     meta
 }
 
-# Normalize the canonical tCorpus and the retained legacy bundle to the one
-# private shape consumed by text retrieval.
-.raw_document_source <- function(src) {
-    if (.is_tcorpus(src)) {
-        return(list(corpus = src,
-                    docs_index = .document_index_from_corpus(src)))
-    }
-    if (is.list(src) && all(c("corpus", "docs_index") %in% names(src))) {
-        if (!.is_tcorpus(src$corpus) || !is.data.frame(src$docs_index)) {
-            stop("legacy document bundles need a tCorpus and docs_index frame.",
-                 call. = FALSE)
-        }
-        validate_source_view(src$docs_index, DOCS_SOURCE)
-        return(src)
-    }
-    NULL
-}
-
+# The public document source is a metadata-rich tCorpus, or -- for a doc channel
+# that runs no Lucene query -- a prepared index frame. A tCorpus is asked for its
+# own metadata rather than paired with a separately supplied index, so the index
+# and the searchable corpus cannot disagree about which documents exist.
 .document_index <- function(src) {
     if (is.data.frame(src)) {
         validate_source_view(src, DOCS_SOURCE)
         return(src)
     }
-    raw <- .raw_document_source(src)
-    if (!is.null(raw)) return(raw$docs_index)
+    if (.is_tcorpus(src)) return(.document_index_from_corpus(src))
     stop("documents must be a metadata-rich tCorpus or a document index frame.",
          call. = FALSE)
 }
