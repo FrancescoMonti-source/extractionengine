@@ -52,7 +52,10 @@ may use different concept specifications.}
 column supplied by the cohort, or an \code{index_event()}. A cohort column is
 shared by the variable's windowed activations and must have one non-missing value
 per output unit when consumed.}
-\item{output}{A \code{bin_output(group_by)} or \code{from_channel()} specification.}
+\item{output}{A \code{bin_output(group_by)} or \code{from_channel()} specification.
+\code{bin_output()} cannot currently be used with a \code{lucene_llm} activation,
+for the same reason such an activation cannot occur in \code{combine}: a valid
+structured response does not implicitly define positive membership.}
 \item{combine}{Optional \code{combine_channels(expr, by)} specification. Its
 expression uses activation aliases, and \code{by} is the key where their signals
 must coexist. A payload-only activation need not occur in the expression. A

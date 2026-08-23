@@ -367,10 +367,13 @@ inspectable text that the model identified from the bounded evidence it saw.
 
 An LLM response is a structured payload, not an implicit boolean hit. A
 `lucene_llm` activation can be published with `from_channel()`, but it cannot
-currently appear inside `combine_channels()`. The engine would need an explicit
-authored rule mapping response fields to membership before that operation could
-have an unambiguous meaning. Use `method = "lucene"` when Lucene-hit presence is
-itself the intended signal.
+currently supply membership -- neither inside `combine_channels()`, nor as the
+activation behind a `bin_output()`. The engine would need an explicit authored
+rule mapping response fields to membership before either could have an
+unambiguous meaning; without one, the only signal available is whether the
+response was grounded, which says that the model answered from the excerpts, not
+that the patient has the concept. Use `method = "lucene"` when Lucene-hit
+presence is itself the intended signal.
 
 ## 9. Authoring checklist
 

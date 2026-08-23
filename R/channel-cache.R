@@ -30,16 +30,73 @@
     sources
 }
 
+# Is this name bound, in the authoring environment, to a function the author
+# wrote? A function reached in a package namespace, on the search path, or in
+# base is part of the installed runtime that `manifest$runtime` already pins, and
+# its body cannot change between two activations of one protocol. Anything else
+# can.
+.is_authored_function <- function(env, name) {
+    binding_env <- env
+    while (!identical(binding_env, emptyenv())) {
+        if (rlang::env_has(binding_env, name, inherit = FALSE)) {
+            if (rlang::env_binding_are_active(binding_env, name) ||
+                rlang::env_binding_are_lazy(binding_env, name)) {
+                return(FALSE)
+            }
+            if (!is.function(rlang::env_get(binding_env, name, inherit = FALSE))) {
+                return(FALSE)
+            }
+            return(!rlang::is_namespace(binding_env) &&
+                   !identical(binding_env, baseenv()) &&
+                   !environmentName(binding_env) %in% search())
+        }
+        binding_env <- rlang::env_parent(binding_env)
+    }
+    FALSE
+}
+
+# The Phase 1.3 rule makes a name whose nearest ordinary binding is a function
+# invisible to `.data_mask_references()` -- author code is not data -- and that
+# walker never visits a call head at all. Both are right for validation and
+# wrong for a cache key, because `.manifest_snapshot()` renders the expression
+# TEXT: two activations reading `helper(hit_text)` with different `helper`
+# bodies render identically and would hash identically. An invisible dependency
+# is not an identifiable one.
+#
+# Every symbol is visited, call heads included. Over-collecting only refuses a
+# cache entry; under-collecting would serve one activation's answers for another.
+.authored_function_dependencies <- function(quosure) {
+    env <- rlang::quo_get_env(quosure)
+    found <- character()
+    visit <- function(node) {
+        if (rlang::is_symbol(node)) {
+            name <- rlang::as_string(node)
+            if (nzchar(name) && .is_authored_function(env, name)) {
+                found <<- c(found, name)
+            }
+        } else if (rlang::is_call(node)) {
+            for (part in as.list(node)) visit(part)
+        }
+        invisible(NULL)
+    }
+    visit(rlang::quo_get_expr(quosure))
+    unique(found)
+}
+
 # The external values an activation's own expressions read. NULL means the
 # activation is NOT cacheable: a value that was not photographed cannot be
 # quoted in a key, so a hit might serve a result computed under a different one.
 # This is the plan's rule -- an unidentifiable dependency is not cached -- and
-# it falls straight out of the parameter photograph.
+# it falls straight out of the parameter photograph, plus the authored functions
+# the photograph cannot see.
 .channel_cache_parameters <- function(channel_def) {
     values <- list()
     identifiable <- TRUE
     collect <- function(quosure) {
         env <- rlang::quo_get_env(quosure)
+        if (length(.authored_function_dependencies(quosure))) {
+            identifiable <<- FALSE
+        }
         for (key in .data_mask_references(quosure)$external) {
             value <- rlang::env_get(env, key, inherit = TRUE)
             if (.is_simple_parameter(value)) {

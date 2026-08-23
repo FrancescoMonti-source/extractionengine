@@ -201,7 +201,7 @@ concept_spec <- function(name, channels) {
     "task_id", "PATID", "EVTID", "ELTID", "source_EVTID",
     "variable", "channel", "source", "origin", "origin_kind",
     "origin_concept", "origin_channel",
-    "field", "value", "accepted_value", "n_payload_rows",
+    "field", "value", "n_payload_rows",
     "status", "coverage_state", "processing_state", "channel_coverage",
     "selection_status", "evidence_kind",
     "needs_review", "review_reason", "field_validity", "validity_reason",
@@ -447,22 +447,32 @@ use_channel <- function(channel, concept = NULL, selector = NULL,
 
 # A structured LLM response is a record, not boolean membership. Until authors
 # can declare how a response becomes a hit, accepting every valid response would
-# silently make the combine expression mean something different from its text.
-.check_llm_combine_channels <- function(combine, channels) {
-    if (!inherits(combine, "ee_combiner") ||
-        !identical(combine$kind, "hit_set_expr")) {
-        return(invisible(TRUE))
-    }
-
+# silently make the variable mean something different from its text: the only
+# signal the engine has is whether the response was grounded, which is a fact
+# about the model call and not about the patient. Both routes to membership are
+# refused -- a combine expression naming the activation, and a bin_output()
+# whose whole membership signal would be that activation.
+.check_llm_membership_channels <- function(combine, output, channels) {
     llm_aliases <- names(channels)[vapply(
         channels,
         function(channel) identical(channel$method, "lucene_llm"),
         logical(1))]
-    referenced <- intersect(combine$channels, llm_aliases)
+    if (!length(llm_aliases)) return(invisible(TRUE))
+
+    combines <- inherits(combine, "ee_combiner") &&
+        identical(combine$kind, "hit_set_expr")
+    referenced <- if (combines) {
+        intersect(combine$channels, llm_aliases)
+    } else if (identical(output$kind, "binary")) {
+        llm_aliases
+    } else {
+        character()
+    }
 
     if (length(referenced)) {
         stop(
-            "combine_channels() cannot currently use lucene_llm activation(s): ",
+            if (combines) "combine_channels()" else "bin_output()",
+            " cannot currently use lucene_llm activation(s): ",
             paste(referenced, collapse = ", "), ". A valid structured response ",
             "does not define whether the channel hit. Publish the LLM response ",
             "with from_channel(), or use method = 'lucene' for Lucene-hit ",
@@ -551,7 +561,7 @@ variable_spec <- function(name, anchor = NULL, channels = list(),
     .check_output_channel_type(output, channels)
     .check_expr_channels(combine, names(channels),
                          payload_channel = output$channel)
-    .check_llm_combine_channels(combine, channels)
+    .check_llm_membership_channels(combine, output, channels)
 
     event_search <- names(channels)[vapply(
         channels,

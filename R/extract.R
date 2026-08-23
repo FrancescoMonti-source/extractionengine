@@ -564,7 +564,6 @@ run_extraction <- function(tasks, candidates, definition, chat,
                 } else {
                     "model cited no supplied snippet ID"
                 }
-                values$accepted_value <- if (grounded) "present" else NA_character_
                 values$task_id <- as.character(tid)
                 values$task_validity <- task_validity
                 values$task_validity_reason <- task_validity_reason
@@ -603,7 +602,6 @@ run_extraction <- function(tasks, candidates, definition, chat,
     }
 
     empty_values <- definition$value_prototype
-    empty_values$accepted_value <- character()
     empty_values$task_id <- character()
     empty_values$task_validity <- character()
     empty_values$task_validity_reason <- character()

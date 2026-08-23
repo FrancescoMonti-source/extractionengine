@@ -227,10 +227,14 @@
         result, task_ids, reached, artifact_type = artifact_type)
 }
 
-# Did the activation have a universe to search for this task? `pre_selector`
-# holds every artifact the task could have drawn from, so zero rows there means
-# the engine never looked, which is a different answer from looking and finding
-# nothing. Membership publishes the first as NA and the second as FALSE.
+# Did the activation have a universe to search for this task? `pre_selector` is
+# an inner join of source rows against the task keys, so zero rows there means
+# nothing survived it -- the source held no row for this unit, or the declared
+# boundary excluded them all. This count cannot tell those apart, and by the
+# presence-only source contract it need not: both are "not found". The reduction
+# holds NA there and FALSE where the activation looked and found nothing.
+# Published membership is two-valued and gives 0 for both; the distinction is
+# read from `selection_status` and from the audit overlap pattern.
 .lineage_task_eligibility <- function(result, task_ids) {
     .lineage_reached_counts(result, task_ids, "pre_selector", NULL) > 0L
 }

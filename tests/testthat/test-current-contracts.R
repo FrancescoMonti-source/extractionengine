@@ -1015,6 +1015,24 @@ test_that("LLM boundary stays grounded, isolated, and fail closed", {
             output = bin_output(group_by = "PATID")),
         "cannot currently use lucene_llm activation\\(s\\): text_llm")
 
+    # The same reasoning, one channel and no combine. This shape used to compile,
+    # and membership then came from whether the response was grounded -- a fact
+    # about the model call, so a response reporting the concept as absent still
+    # published 1 as long as it cited a snippet.
+    expect_error(
+        variable_spec(
+            name = "llm_membership_is_not_implicit_single_channel",
+            channels = list(
+                text_llm = use_channel(
+                    channel = "text",
+                    concept = smoking,
+                    search_within = "PATID",
+                    method = "lucene_llm",
+                    response = response,
+                    rationale = FALSE)),
+            output = bin_output(group_by = "PATID")),
+        "bin_output\\(\\) cannot currently use lucene_llm activation\\(s\\): text_llm")
+
     # The model-call half is a relation with one row per task. A second attempt
     # row for the same task would make the published call state depend on which
     # one happened to be read first.
@@ -1553,4 +1571,46 @@ test_that("a text activation is retrieved and asked once per protocol", {
         alone$values[setdiff(names(alone$values), "variable")],
         protocol$smoking_b$values[
             setdiff(names(protocol$smoking_b$values), "variable")])
+
+    # Two activations whose expression TEXT is identical but whose authored
+    # helper differs. The manifest renders text, and the data-mask walker never
+    # visits a call head, so nothing the key can see tells them apart. Such an
+    # activation must not be cached at all: a hit would serve the first
+    # variable's retrieval and model answers to the second.
+    make_filtered <- function(name, keeper) {
+        keep <- keeper
+        variable_spec(
+            name = name,
+            channels = list(tabac = use_channel(
+                channel = "text", concept = smoking, search_within = "PATID",
+                method = "lucene_llm", response = response, rationale = FALSE,
+                filter_rows = keep(hit_text))),
+            output = from_channel("tabac", group_by = "PATID"))
+    }
+    seen$calls <- 0L
+    seen$retrievals <- 0L
+    helpers <- run_protocol(
+        list(
+            make_filtered("keep_hit", function(x) rep(TRUE, length(x))),
+            make_filtered("drop_hit", function(x) rep(FALSE, length(x)))),
+        cohort,
+        sources = list(documents = documents),
+        chat = structure(list(), class = "fake"))
+    expect_identical(
+        list(
+            retrievals = seen$retrievals,
+            model_calls = seen$calls,
+            kept = helpers$keep_hit$values$statut,
+            dropped = helpers$drop_hit$values$statut),
+        list(
+            retrievals = 2L,
+            model_calls = 1L,
+            kept = c("fumeur", NA_character_),
+            dropped = c(NA_character_, NA_character_)))
+
+    # The refusal is visible in the key itself, not only in its consequences.
+    cache_parameters <- getFromNamespace(
+        ".channel_cache_parameters", "extractionengine")
+    expect_null(
+        cache_parameters(make_filtered("probe", identity)$channels$tabac))
 })

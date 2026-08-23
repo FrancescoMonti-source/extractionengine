@@ -1028,8 +1028,103 @@ tutto il resto: si possono fare in qualsiasi ordine. Il punto 1.10 deve preceder
 la prima preparazione costosa delle sorgenti; 1.4 è una dichiarazione di confine,
 non plumbing da coordinare con 1.3.
 
-**Stato al 2026-08-23. Il piano è chiuso.** Le fasi 0, 1, 2, 3, 3b, 4 e 5 sono
-tutte committate sul ramo `phase-0-cleanup`, che non è ancora entrato in
-`master`. **Non resta nessun difetto conosciuto che pubblichi un valore falso**,
-e tutti gli undici difetti della Parte 2, le decisioni di fine Fase 4 e i
-quattro punti della Fase 5 sono chiusi.
+**Stato al 2026-08-23.** Le fasi 0, 1, 2, 3, 3b, 4 e 5 sono tutte committate sul
+ramo `phase-0-cleanup`, che non è ancora entrato in `master`. Tutti gli undici
+difetti della Parte 2, le decisioni di fine Fase 4 e i quattro punti della
+Fase 5 sono chiusi.
+
+**Il piano non è però chiuso, e la frase che lo diceva era falsa.** Una review
+avversariale esterna, eseguita quando le fasi risultavano tutte committate, ha
+trovato difetti che il piano non aveva mai enumerato. Vedi la Parte 6.
+
+---
+
+## Parte 6 — Review avversariale esterna (2026-08-23)
+
+Cinque rilievi da un revisore esterno sul branch completo, verificati uno per uno
+nel sorgente. La lezione di metodo è che **le undici voci della Parte 2 erano un
+inventario dei difetti che sapevamo di avere, non dei difetti esistenti**: tre di
+questi cinque non corrispondono a nessuna di quelle voci.
+
+| | Rilievo | Esito |
+|---|---|---|
+| — | Leak `EVTID` fra pazienti | **Respinto** — viola un invariante EDSAN |
+| **L** | `bin_output()` su attivazione `lucene_llm` | **Chiuso** — pubblicava un valore falso |
+| **M** | La cache non vede gli helper autorati | **Chiuso** — pubblicava un valore falso |
+| **N** | Schema LLM annidato non validato | **Aperto** |
+| — | «mai guardato» pubblicato come 0 | **Non è un difetto** — due frasi sbagliate |
+
+**Il rilievo respinto.** La fixture faceva condividere un `EVTID` a due `PATID`.
+Il source model EDSAN garantisce che un `EVTID` appartiene a un solo `PATID` per
+struttura della sorgente, e dice esplicitamente che non è una validazione da
+rieseguire a valle. Il join su `EVTID` nudo di `.hit_set_expr_variable()` è
+corretto. È la terza review esperta a cadere sullo stesso invariante: un
+revisore senza il source model produce output inutilizzabile su questo pacchetto.
+
+**L — `bin_output()` su attivazione `lucene_llm`. Chiuso.** Il principio «una
+risposta strutturata non definisce membership» era applicato solo dentro
+`combine_channels()`. Una variabile a canale singolo senza combine passava tutte
+e tre le guardie, perché `.check_output_contract()` e `.check_output_channel_type()`
+escono entrambe appena vedono un output binario. La membership veniva allora da
+`accepted_value`, che valeva `"present"` per **ogni risposta grounded**: una
+risposta che riportava il concetto come assente pubblicava `1` purché citasse uno
+snippet. Riparato generalizzando la guardia esistente a
+`.check_llm_membership_channels(combine, output, channels)`; il percorso reso
+irraggiungibile è stato cancellato nello stesso commit, incluse
+`.reduce_llm_channel_result()`, `.accepted_values_for_tasks()`, `.hit_for_task()`
+— che non aveva già più chiamanti — e il marcatore `accepted_value` per intero.
+*[misurato]* -48 righe nette sotto `R/`; suite 96/96; oracolo differenziale 7/7.
+
+**M — la cache non vede gli helper autorati. Chiuso.** La Fase 1.3 rende
+**invisibile** al validatore un nome legato a una funzione ordinaria, e ha
+ragione; il walker non visita nemmeno la testa di chiamata
+(`R/structured.R:220-222`). Ma la chiave della Fase 5.4 si costruisce da
+`.data_mask_references(quosure)$external` più il testo dell'espressione reso da
+`.manifest_snapshot()`: un helper autorato non compare in nessuno dei due.
+La regola dichiarata dalla 5.4 — *«una dipendenza non identificabile lascia la
+chiave NULL»* — non scattava mai, perché una funzione non è *non identificabile*:
+è invisibile.
+
+*[misurato]* con la guardia disattivata, due variabili con testo identico
+`filter_rows = keep(hit_text)` e due `keep` opposti: un solo recupero invece di
+due, e **la variabile che scarta ogni candidato pubblica `"fumeur"`** — la
+risposta del modello ottenuta dall'altra. È il valore falso, in una riga di
+output di test.
+
+Riparato in `.channel_cache_parameters()`: `.authored_function_dependencies()`
+visita ogni simbolo, teste di chiamata comprese, e un nome legato a una funzione
+che non viene da un namespace di pacchetto, dal search path o da `base` rende
+l'attivazione non cachabile. Cade sulla via `NULL` che esisteva già — nessuna
+seconda superficie di chiave. Sovra-raccogliere rifiuta soltanto una entry di
+cache; sotto-raccogliere servirebbe le risposte di un'altra attivazione, quindi
+l'asimmetria è voluta.
+
+**N — schema LLM annidato non validato. Aperto.** `.llm_result_column()` valida
+`TypeBasic` e `TypeEnum`; ogni altro tipo cade su `list(value)`. Un enum annidato
+invalido, o un campo annidato `required` omesso, viene pubblicato come `valid` e
+`complete`. `TypeObject` espone i figli in `S7::props(x)$properties`, `TypeArray`
+l'elemento in `S7::props(x)$items`; la requiredness sta sul figlio, non sul padre.
+`.llm_field_prototype()` va esteso per primo, perché `.llm_missing_value()` non ha
+conoscenza di tipo propria.
+
+**«Mai guardato» pubblicato come 0 — non è un difetto, ed è istruttivo perché.**
+I riduttori costruiscono `hit = NA` per un task senza artefatti a `pre_selector`,
+e l'assemblatore lo schiaccia a `0`. Sembrava una distinzione costruita e buttata.
+Non lo è, per due ragioni indipendenti:
+
+- `pre_selector` è un `inner_join` delle righe sorgente contro le chiavi dei task
+  (`R/structured.R:737-738`). «La sorgente non ha righe per questa unità» e «il
+  confine dichiarato le esclude tutte» producono lo **stesso** zero. La
+  distinzione non è recuperabile dal segnale su cui la si voleva fondare, e per
+  il contratto presence-only non deve esserlo: entrambe sono «non trovato».
+- l'`NA` **non** è perso: sopravvive in `audit$overlap`, dove `hit_set_overlap()`
+  lo rende come stato distinto nel pattern, e in `channel_status`.
+
+Quindi non c'era né un ramo da aggiungere né un meccanismo da togliere: erano due
+frasi sbagliate, in `DESIGN.md` e in `R/lineage.R`, che dicevano *«membership
+publishes NA»* di una colonna che è sempre stata a due valori. Corrette.
+
+**Nota di metodo.** La prima riparazione proposta per questo punto era additiva —
+separare i due casi dentro `.lineage_task_eligibility()`. Sarebbe stata sedimento
+difensivo su una distinzione inesistente. È stata fermata dal proprietario prima
+di essere scritta, ed è il motivo per cui questa voce esiste qui.

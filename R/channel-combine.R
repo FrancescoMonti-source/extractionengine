@@ -44,16 +44,6 @@
 }
 
 
-.accepted_values_for_tasks <- function(result, task_ids) {
-    index <- .task_row_index(
-        result$values, task_ids, "accepted_value", "Channel values",
-        allow_columnless_empty = TRUE)
-    accepted <- rep(NA_character_, length(task_ids))
-    found <- !is.na(index)
-    accepted[found] <- as.character(result$values$accepted_value[index[found]])
-    accepted
-}
-
 # Deterministic membership is two facts about the activation and nothing else:
 # whether the task had a universe to search at all, and whether any artifact
 # reached `selected`. A task the engine never looked at stays NA; a task it
@@ -68,27 +58,3 @@
         hit = hit)
 }
 
-# The LLM membership path keeps its own public status vocabulary, but reads it
-# from the model-call relation rather than from a coverage label that had merged
-# retrieval and the call into one state machine. A task that was never called --
-# because nothing was retrieved for it, or because it had no documents at all --
-# is unavailable; retrieval itself is counted in the lineage.
-.reduce_llm_channel_result <- function(res, task_ids) {
-    states <- .llm_call_states(res, task_ids)
-    accepted <- .accepted_values_for_tasks(res, task_ids)
-
-    status <- rep(NA_character_, length(task_ids))
-    status[states == "valid"] <- "complete"
-    status[states == "not_called"] <- "unavailable"
-    status[states == "invalid"] <- "invalid"
-    status[states %in% c("model_error", "processing_error")] <- "error"
-
-    hit <- rep(NA, length(task_ids))
-    hit[states == "valid"] <- !is.na(accepted[states == "valid"]) &
-        accepted[states == "valid"] == "present"
-
-    tibble::tibble(
-        task_id = as.character(task_ids),
-        status = status,
-        hit = hit)
-}

@@ -52,6 +52,19 @@ migration.
   `vapply(NUMRES, kable, numeric(1))` needs `.env$kable`, while calling it as
   `kable(...)` is unaffected.
 
+* `bin_output()` can no longer name a `lucene_llm` activation. The rule that a
+  structured response does not implicitly define membership was already enforced
+  inside `combine_channels()`, but a single-channel variable with no combine
+  bypassed it and compiled. Membership was then taken from whether the response
+  was grounded — a fact about the model call — so a response reporting the
+  concept as *absent* still published `1` as long as it cited a snippet.
+  **Migration:** publish the response with `from_channel()`, or use
+  `method = "lucene"` when Lucene-hit presence is itself the intended signal.
+  No known variable used the rejected shape. The internal `accepted_value`
+  marker that carried this inference went with it, so `accepted_value` is no
+  longer a reserved response field name and is now available to authors. It was
+  never part of published `values`.
+
 ## Breaking changes to results
 
 * `channel_coverage` is no longer published for structured activations. The
@@ -137,6 +150,18 @@ migration.
 * `act_channel()` is no longer exported and no longer exists. It had no callers.
 
 ## Other changes
+
+* A text activation whose expressions call a function the author defined is no
+  longer reused across the variables of a `run_protocol()`. The cache key is
+  built from the rendered expression *text* plus the photographed `.env$`
+  values, and a bare name bound to a function is deliberately invisible to that
+  photograph — so two activations reading `filter_rows = keep(hit_text)` with
+  different `keep` bodies produced the same key, and the second variable was
+  served the first one's retrieval and model answers. An activation reading an
+  authored function is now not cached at all, which is the same rule the plan
+  already stated for a dependency that cannot be identified. Functions from
+  package namespaces, the search path, and base are unaffected: they belong to
+  the runtime `manifest$runtime` already records.
 
 * `combine_channels(by = "ELTID")` across two sources is still rejected, but
   the stated reason is now correct: `by` names the key on which the expression

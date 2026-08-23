@@ -60,8 +60,9 @@ distinct from \code{use_channel(group_by =)}, which groups rows only for
 \value{An anchor, combiner, or output specification.}
 \description{
 These objects describe mechanical execution. \code{bin_output(group_by)} publishes
-membership or a hit-set decision. \code{from_channel()} publishes an explicitly
-named activation payload.
+membership or a hit-set decision, and cannot be used with a \code{lucene_llm}
+activation: a valid structured response does not define whether the channel hit.
+\code{from_channel()} publishes an explicitly named activation payload.
 }
 \details{
 Data-masked expressions see prepared-source columns as bare names, and a bare

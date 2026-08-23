@@ -385,11 +385,14 @@ candidate rows if and only if its state is `candidate`.
 
 An LLM response does not implicitly define boolean channel membership. A
 `lucene_llm` activation may be published with `from_channel()` (including as a
-payload gated by a deterministic combine), but it cannot currently appear in
-`combine = combine_channels(...)`. Compilation fails with an explanatory error
-until an explicit response-to-hit rule such as `hit_when` is implemented. Use
-`method = "lucene"` when Lucene-hit presence itself is the intended membership
-signal.
+payload gated by a deterministic combine), but it cannot currently supply
+membership: neither in `combine = combine_channels(...)`, nor as the activation
+behind a `bin_output()`. Compilation fails with an explanatory error in both
+cases, until an explicit response-to-hit rule such as `hit_when` is implemented.
+The engine has no authored rule turning a response into a hit, and the only
+signal it could fall back on is whether the response was grounded -- a fact about
+the model call, not about the patient. Use `method = "lucene"` when Lucene-hit
+presence itself is the intended membership signal.
 
 No candidate, model failure, or invalid schema still yields a stable result row
 with typed missing fields and separate selection/processing information. Raw

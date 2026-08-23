@@ -836,30 +836,18 @@
 # the channel's observed hit, as OBSERVED set algebra -- a task is a member iff
 # hit == TRUE, so both FALSE and NA give 0 and the value is always 0/1. Public
 # channel_status reports selection and post-selection processing; deterministic
-# values do not translate those facts into a completeness label. The LLM
-# membership path retains its existing output until that contract is rewritten.
+# values do not translate those facts into a completeness label. A lucene_llm
+# activation cannot reach here: variable_spec() refuses to derive membership
+# from a structured response, so the channel is always deterministic.
 .single_membership_variable <- function(variable, tasks, channel_name, result) {
     var_name <- variable$name
     source_name <- .source_name_for_channel(channel_name, variable)
     task_ids <- as.character(tasks$task_id)
-    channel <- .channel_def(variable, channel_name)
-    is_llm <- identical(channel$type, "text") &&
-        identical(channel$method, "lucene_llm")
-    reduced <- if (is_llm) {
-        .reduce_llm_channel_result(result, task_ids)
-    } else {
-        .deterministic_hits_for_tasks(result, task_ids)
-    }
+    reduced <- .deterministic_hits_for_tasks(result, task_ids)
     values <- tibble::tibble(
         task_id = task_ids,
         variable = var_name,
         value = as.integer(reduced$hit %in% TRUE))
-    if (is_llm) {
-        coverage <- rep("partial", length(task_ids))
-        coverage[reduced$status == "complete"] <- "complete"
-        coverage[reduced$status == "error"] <- "failed"
-        values$channel_coverage <- coverage
-    }
 
     list(
         values = values,
@@ -948,16 +936,6 @@
                  vctrs::vec_ptype_full(output$ptype), ": ",
                  conditionMessage(cnd), call. = FALSE)
         })
-}
-
-.hit_for_task <- function(result, task_id) {
-    values <- result$values
-    if (!is.data.frame(values) ||
-        !all(c("task_id", "accepted_value") %in% names(values))) return(NA)
-    accepted <- as.character(values$accepted_value[
-        as.character(values$task_id) == task_id])
-    if (!length(accepted)) return(NA)
-    any(accepted %in% "present")
 }
 
 .public_evidence <- function(result, variable_name, channel_name, source_name,

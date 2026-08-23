@@ -286,8 +286,11 @@ order.
 This relation is authoritative for operational selection, terminal
 selection/model-input counts, upstream eligibility/window counts, and fine-grain
 combine placement. It also answers whether an activation had a universe to
-search at all: a task with no `pre_selector` artifact was never looked at, so
-membership publishes `NA` for it rather than an observed `FALSE`. No executor
+search at all: a task with no `pre_selector` artifact had nothing to draw from,
+so the reduction holds `NA` rather than an observed `FALSE`. Published
+membership stays two-valued — `bin_output()` gives `0` for both — and the
+distinction is read from `channel_status$selection_status` and, for combine
+variables, from the `audit$overlap` pattern. No executor
 publishes a per-task state frame; the model call is a separate relation, not a
 second reading of the same one. It deliberately does not copy prepared-source
 payload.
