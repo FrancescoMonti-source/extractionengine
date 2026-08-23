@@ -480,7 +480,10 @@ corresponding executor emits them:
 Stages are included only when that executor records a distinct count. Their
 absence alone does not prove that an operation did not run.
 
-`llm_calls` contains one row per task/channel model invocation. `call_status`
+`llm_calls` contains one row per task/channel model invocation. `reused` marks
+a row whose call was made once, earlier in the same `run_protocol()`, for
+another variable activating the same text channel; a protocol's real call count
+is the number of rows with `reused` FALSE. `call_status`
 records the model/transport outcome, `response_status` records whether the
 returned response could be processed, and `task_validity` records grounding and
 schema acceptance; `transport_attempts` counts the underlying call tries. The

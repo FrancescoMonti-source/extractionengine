@@ -732,6 +732,17 @@
         },
         text = {
             method <- channel_def$method
+            # Retrieval and the model calls are the only work worth reusing
+            # between the variables of a protocol; the key covers everything
+            # this branch reads, and an activation whose dependencies cannot be
+            # named is simply not cached.
+            cache <- .channel_cache(sources)
+            key <- if (is.null(cache)) NULL else .channel_cache_key(
+                variable, channel_def, tasks, sources, chat, grain_keys,
+                cohort_tasks)
+            if (!is.null(key) && rlang::env_has(cache, key)) {
+                return(.reused_channel_result(rlang::env_get(cache, key)))
+            }
             text_inputs <- .resolve_text_inputs(sources[[source]], channel_def,
                                                  variable, tasks, selector,
                                                  cohort_tasks)
@@ -760,6 +771,7 @@
             result$audit_counts <- text_inputs$audit_counts
             result$lineage_inputs <- text_inputs$lineage_inputs
             result$declared_eligibility <- text_inputs$declared_eligibility
+            if (!is.null(key)) rlang::env_poke(cache, key, result)
             result
         },
         stop("No experimental executor for channel type: ", channel_def$type,
@@ -1569,6 +1581,7 @@
     tibble::tibble(
         task_id = character(), channel = character(), provider = character(),
         model = character(), temperature = double(), seed = integer(),
+        reused = logical(),
         max_tokens = double(), params = list(), call_status = character(),
         response_status = character(), transport_attempts = integer(),
         started_at = as.POSIXct(character()), latency_ms = double(),
@@ -1587,8 +1600,11 @@
         names(frame)[names(frame) == "processing_status"] <- "response_status"
         names(frame)[names(frame) == "n_tries"] <- "transport_attempts"
         frame$channel <- channel_name
-        frame[c("task_id", "channel",
-                setdiff(names(frame), c("task_id", "channel")))]
+        # A reused row records a call made once, earlier in this run, for
+        # another variable of the same protocol.
+        frame$reused <- isTRUE(channel_results[[channel_name]]$reused)
+        frame[c("task_id", "channel", "reused",
+                setdiff(names(frame), c("task_id", "channel", "reused")))]
     })
     result <- dplyr::bind_rows(calls)
     if (!nrow(result)) .empty_audit_llm_calls() else result
@@ -2147,6 +2163,7 @@ run_protocol <- function(variables, cohort = NULL, sources = NULL,
         sources <- .prepare_execution_sources(sources, protocol_cohort)
         sources <- .attach_execution_roster(sources, protocol_cohort)
         sources <- .attach_source_identity(sources)
+        sources <- .attach_channel_cache(sources)
     }
 
     results <- lapply(variables, run_variable, cohort = cohort, sources = sources,

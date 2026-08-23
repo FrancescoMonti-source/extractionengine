@@ -301,8 +301,16 @@ respectively, associated structured rows or searchable text documents before
 selection, window survivors, selector matches, matches surviving activation
 filters, model snippets, and source rows supplied to the terminal value
 expression. Stages appear only when separately instrumented, so absence does not
-prove an operation did not run. The audit also contains `llm_calls`, one row per
-task/channel model invocation actually made. Its independent public fields are
+prove an operation did not run. Within one `run_protocol()`, a text activation that reads the same source
+snapshot with the same resolved configuration for the same units is retrieved
+and asked once, and every later variable reuses that result; the key is built
+from a rendering of the whole resolved activation plus the photographed external
+parameters, and an activation whose dependencies cannot be rendered is not
+cached rather than keyed on a guess. Deterministic structured activations are
+deliberately not cached: they are a measured 2.1 % of a membership run. The
+audit also contains `llm_calls`, one row per
+task/channel model invocation, with `reused` marking a row whose call was made
+earlier in the run for another variable. Its independent public fields are
 `call_status`, `response_status`, `task_validity`, and `transport_attempts`; the
 zero-row table keeps the same schema. The resolved `execution_manifest` is a
 configuration snapshot rather than an activity log. Combination runs additionally retain

@@ -1461,3 +1461,96 @@ test_that("simple external parameters are photographed once before execution", {
             cohort, sources = list(biology = biology)),
         "two different values")
 })
+
+test_that("a text activation is retrieved and asked once per protocol", {
+    response <- ellmer::type_object(
+        statut = ellmer::type_enum(
+            c("fumeur", "non_fumeur"), "Statut explicitement documenté."))
+    smoking <- concept_spec(
+        "tabagisme",
+        channels = list(text = text_channel(selector = lucene_query("taba*"))))
+    make_variable <- function(name, max_candidates = NULL) variable_spec(
+        name = name,
+        channels = list(tabac = use_channel(
+            channel = "text", concept = smoking, search_within = "PATID",
+            method = "lucene_llm", response = response, rationale = FALSE,
+            max_candidates = max_candidates)),
+        output = from_channel("tabac", group_by = "PATID"))
+
+    cohort <- tibble::tibble(PATID = c("P1", "P2"))
+    documents <- list(
+        coverage = tibble::tibble(
+            task_id = c("P1", "P2"), PATID = c("P1", "P2"),
+            EVTID = NA_character_,
+            coverage_state = c("candidate", "no_candidate")),
+        candidates = tibble::tibble(
+            task_id = "P1", snippet_id = "S001", hit_ref = "H001",
+            PATID = "P1", EVTID = "SOURCE_STAY", ELTID = "D001",
+            snippet_text = "Tabagisme actif documenté.",
+            hit_text = "Tabagisme actif", RECDATE = as.Date("2026-03-01"),
+            RECTYPE = "CR"))
+
+    seen <- new.env(parent = emptyenv())
+    seen$calls <- 0L
+    seen$retrievals <- 0L
+    resolve_text_inputs <- getFromNamespace(
+        ".resolve_text_inputs", "extractionengine")
+    testthat::local_mocked_bindings(
+        .chat_metadata = function(chat) list(
+            provider = "test", model = "fake", params = list(),
+            temperature = 0, seed = 1L, max_tokens = 100),
+        .resolve_text_inputs = function(...) {
+            seen$retrievals <- seen$retrievals + 1L
+            resolve_text_inputs(...)
+        },
+        .call_chat = function(chat, prompt, type, system_prompt, metadata) {
+            seen$calls <- seen$calls + 1L
+            list(
+                status = "completed",
+                result = list(statut = "fumeur", snippet_ids = "S001"),
+                error = NA_character_, n_tries = 1L, errors = character(),
+                started_at = Sys.time(), latency_ms = 0,
+                partial_response = NA_character_, output_tokens = 10,
+                inferred_finish_reason = "stop")
+        },
+        .package = "extractionengine")
+
+    # Two variables asking the same question of the same snapshot for the same
+    # units, and one asking it with a different activation configuration.
+    protocol <- run_protocol(
+        list(
+            make_variable("smoking_a"),
+            make_variable("smoking_b"),
+            make_variable("smoking_c", max_candidates = 1L)),
+        cohort,
+        sources = list(documents = documents),
+        chat = structure(list(), class = "fake"))
+
+    expect_identical(
+        list(
+            retrievals = seen$retrievals,
+            model_calls = seen$calls,
+            values = lapply(protocol, function(run) run$values$statut),
+            reused = unlist(lapply(
+                protocol, function(run) run$audit$llm_calls$reused),
+                use.names = FALSE)),
+        list(
+            retrievals = 2L,
+            model_calls = 2L,
+            values = list(
+                smoking_a = c("fumeur", NA_character_),
+                smoking_b = c("fumeur", NA_character_),
+                smoking_c = c("fumeur", NA_character_)),
+            reused = c(FALSE, TRUE, FALSE)))
+
+    # Running the same variable alone answers identically: reuse changes what
+    # is executed, never what is published.
+    alone <- run_variable(
+        make_variable("smoking_b"), cohort,
+        sources = list(documents = documents),
+        chat = structure(list(), class = "fake"))
+    expect_identical(
+        alone$values[setdiff(names(alone$values), "variable")],
+        protocol$smoking_b$values[
+            setdiff(names(protocol$smoking_b$values), "variable")])
+})

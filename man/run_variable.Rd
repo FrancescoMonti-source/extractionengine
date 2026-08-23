@@ -89,9 +89,12 @@ structured rows or searchable text documents before selection, window
 survivors, selector matches, matches surviving activation filters, model
 snippets, and prepared-source rows supplied to the terminal value expression,
 respectively.
-\code{llm_calls} has one row per task/channel model invocation actually made and
+\code{llm_calls} has one row per task/channel model invocation and
 separates \code{call_status}, \code{response_status}, \code{task_validity}, and
-\code{transport_attempts}. It retains configuration, timing, fingerprints,
+\code{transport_attempts}. \code{reused} marks a row whose call was made once,
+earlier in the same \code{run_protocol()}, for another variable activating the
+same text channel, so a protocol's real call count is the number of rows with
+\code{reused} FALSE. It retains configuration, timing, fingerprints,
 diagnostics, and raw or partial response, with a stable schema even at zero rows.
 A task that does not reach the model has no call row.
 \code{execution_manifest} is the

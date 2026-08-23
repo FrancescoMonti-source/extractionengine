@@ -928,13 +928,38 @@ una definizione, e un nome che dentro di essa vale due numeri non è
 registrabile una volta sola.
 
 **5.4 — Riuso dei canali fra variabili, ristretto al recupero Lucene e alle
-chiamate al modello.** Il profilo dice che l'esecutore strutturato è il 2,1 % di
-un run di appartenenza: cachearlo compra ~2 % e aggiunge una superficie di
-correttezza sulla chiave di cache che dovrebbe includere il selettore risolto,
-le chiavi di scope, la finestra e ogni semplice parametro esterno esplicitamente
-supportato — cioè la fotografia della 5.3. Se una dipendenza non è
-identificabile — per esempio una closure arbitraria — quel lavoro non è
-cacheabile. La metà deterministica si taglia.
+chiamate al modello. Chiuso il 2026-08-23.**
+
+Dentro un `run_protocol()`, un'attivazione testuale che legge lo stesso snapshot
+con la stessa configurazione risolta per le stesse unità viene recuperata e
+interrogata **una volta**; ogni variabile successiva riusa quel risultato.
+
+*[misurato]* tre variabili sulla stessa attivazione LLM: da tre recuperi e tre
+chiamate al modello a **uno e uno**, con valori pubblicati identici. La stessa
+variabile eseguita da sola risponde allo stesso modo.
+
+**La chiave è renderizzata, non elencata a mano.** `.manifest_snapshot()`
+riproduce l'intera attivazione risolta come dati semplici — compreso un
+argomento che `use_channel()` non ha ancora — e la fotografia della 5.3
+fornisce i valori esterni che il testo dell'espressione non può mostrare. È il
+terzo uso della stessa camminata, ed è il motivo per cui la 5.3 doveva venire
+prima. Se una dipendenza non è identificabile la chiave è `NULL` e il lavoro
+semplicemente non viene cachato: la regola del piano è implementata come
+assenza di chiave, non come caso speciale.
+
+**La metà deterministica è tagliata**, come deciso: l'esecutore strutturato è il
+2,1 % di un run di appartenenza.
+
+**Una chiamata riusata è marcata**, perché un conteggio mentirebbe altrimenti:
+`audit$llm_calls` ha `reused`, e il numero reale di chiamate di un protocollo è
+il numero di righe con `reused` FALSE. È la stessa disciplina del `not_executed`
+della Fase 4.5.
+
+**Un limite da nominare.** La cache è per attivazione, non divisa in uno strato
+di recupero e uno di modello, quindi due attivazioni che differiscono solo nella
+configurazione LLM recuperano entrambe. Dividerla recupererebbe quel caso al
+prezzo di una seconda superficie di chiave; oggi non ha un chiamante, perché
+variabili che condividono un canale ne condividono l'intera configurazione.
 
 ---
 
@@ -1003,8 +1028,8 @@ tutto il resto: si possono fare in qualsiasi ordine. Il punto 1.10 deve preceder
 la prima preparazione costosa delle sorgenti; 1.4 è una dichiarazione di confine,
 non plumbing da coordinare con 1.3.
 
-**Stato al 2026-08-23.** Fasi 0, 1, 2, 3, 3b e 4 sono committate sul ramo
-`phase-0-cleanup`, che non è ancora entrato in `master`; della Fase 5 sono
-chiuse la 5.1, la 5.2 e la 5.3; resta la 5.4. **Non resta nessun difetto
-conosciuto che pubblichi un valore falso**, e tutti gli undici difetti della
-Parte 2 e le decisioni di fine Fase 4 sono chiusi.
+**Stato al 2026-08-23. Il piano è chiuso.** Le fasi 0, 1, 2, 3, 3b, 4 e 5 sono
+tutte committate sul ramo `phase-0-cleanup`, che non è ancora entrato in
+`master`. **Non resta nessun difetto conosciuto che pubblichi un valore falso**,
+e tutti gli undici difetti della Parte 2, le decisioni di fine Fase 4 e i
+quattro punti della Fase 5 sono chiusi.

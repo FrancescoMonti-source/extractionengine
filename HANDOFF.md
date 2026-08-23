@@ -2955,3 +2955,67 @@ the pre-existing `NEWS.md` heading. No real model call was made.
 **Files changed.** `R/structured.R`, `R/run_variable.R`,
 `tests/testthat/test-current-contracts.R`, `NEWS.md`, `README.md`, `DESIGN.md`,
 `man/run_variable.Rd`, `man/variable_spec.Rd`, `PLAN.md`, and this entry.
+
+## Phase 5.4 one retrieval, one model call per protocol (2026-08-23)
+
+**Boundary.** The last Phase 5 slice, and defect J. It changes what is
+*executed*, never what is published.
+
+**Change.** Within one `run_protocol()`, a text activation that reads the same
+source snapshot with the same resolved configuration for the same units is
+retrieved and asked once; every later variable reuses that result. The cache is
+one environment carried on the prepared bundle beside the roster and the
+snapshot identity, so every variable of the run sees the same entries even
+though each gets its own copy of the source list.
+
+**Measured.** Three variables sharing one LLM activation over a two-patient
+cohort: three retrievals and three model calls become **one and one**, with
+identical published values. The same variable run alone answers identically.
+
+**The key is rendered, not hand-listed.** `.manifest_snapshot()` renders the
+whole resolved activation as plain data -- including an argument
+`use_channel()` does not have yet -- and the photograph from 5.3 supplies the
+external values its expression text cannot show. The output grain is in the key
+because it reaches the model prompt through `format_task_target()`. This is the
+third use of the same walk, and the reason 5.3 had to come first.
+
+**Unidentifiable means uncached, not guessed.** An activation reading an
+external value that was not photographed -- an option list -- yields a NULL key
+and runs normally. So does anything the snapshot refuses to render. The plan's
+rule ("se una dipendenza non è identificabile, quel lavoro non è cacheabile")
+is implemented as a NULL key rather than as a special case.
+
+**The deterministic half is cut, deliberately.** Only the text branch is
+cached. The Phase 1 profile put the structured executor at 2,1 % of a
+membership run, so caching it would buy ~2 % in exchange for a real correctness
+surface on a key over prepared frames.
+
+**A reused call is marked, because a count would otherwise lie.**
+`audit$llm_calls` gains `reused`. A protocol's real model-call count is the
+number of rows with `reused` FALSE. This is the same discipline as Phase 4.5's
+`not_executed`: republishing a reused call unmarked would claim work, and cost,
+that never happened a second time.
+
+**A limit worth naming.** The cache is per activation, not split into a
+retrieval layer and a model layer, so two activations differing only in their
+LLM configuration each retrieve. Splitting it would recover that, at the price
+of a second key surface. Variables that share a channel share its whole
+configuration, so the split has no caller today.
+
+**Sentinel.** `"a text activation is retrieved and asked once per protocol"`
+runs three variables in one protocol -- two identical, one differing only in
+`max_candidates` -- and asserts two retrievals, two model calls, identical
+values for all three, and `reused` reading FALSE, TRUE, FALSE. It then runs one
+of them alone and asserts the same published values.
+
+**Verification.** All 95 current-contract expectations pass with no warnings
+(93 before). The seven Phase 0 differential cases are unchanged from
+`before-phase5.rds`. A full source build creates both vignettes and
+`R CMD check --no-manual --no-build-vignettes` finishes with `Status: 1 NOTE`,
+the pre-existing `NEWS.md` heading. No real model call was made.
+
+**Phase 5 is complete, and with it the plan.**
+
+**Files changed.** `R/channel-cache.R` (new), `R/run_variable.R`,
+`tests/testthat/test-current-contracts.R`, `NEWS.md`, `README.md`, `DESIGN.md`,
+`man/run_variable.Rd`, `PLAN.md`, and this entry.

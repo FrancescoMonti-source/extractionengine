@@ -202,3 +202,29 @@ migration.
   different values now fail at run time. One variable is one definition; a name
   meaning two numbers inside it cannot be recorded once, and recording either
   would misdescribe the other expression. **Migration:** rename one of them.
+
+* Within one `run_protocol()`, a text activation is retrieved and asked once.
+  Two variables of a study that activate the same text channel — the same
+  resolved query, over the same source snapshot, for the same units — used to
+  pay for two Lucene retrievals and two model calls per task. The second now
+  reuses the first result. *Measured:* three variables sharing one activation
+  go from three retrievals and three model calls to one and one, publishing
+  identical values.
+
+  The cache key is a rendering of the whole resolved activation plus the
+  external parameters photographed before execution, so an argument
+  `use_channel()` does not have yet enters the key without an edit. An
+  activation whose dependencies cannot be rendered — one reading an external
+  value that was not photographed, for instance — is **not** cached rather than
+  keyed on a guess. Deterministic structured activations are deliberately not
+  cached: the executor is a measured 2.1% of a membership run, which does not
+  buy the correctness surface a key over prepared frames would add. Two
+  activations that differ only in their LLM configuration each retrieve; the
+  cache is per activation, not split into a retrieval layer and a model layer.
+
+* `audit$llm_calls` gains `reused`, TRUE for a row whose call was made once,
+  earlier in the same run, for another variable activating the same channel. A
+  protocol's real model-call count is the number of rows with `reused` FALSE.
+  Republishing a reused call unmarked would let a protocol double-count work,
+  and cost, that never happened a second time. **Migration:** none, unless you
+  counted `nrow(audit$llm_calls)` across a protocol; count `!reused` instead.
