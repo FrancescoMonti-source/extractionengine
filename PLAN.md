@@ -1033,9 +1033,12 @@ ramo `phase-0-cleanup`, che non è ancora entrato in `master`. Tutti gli undici
 difetti della Parte 2, le decisioni di fine Fase 4 e i quattro punti della
 Fase 5 sono chiusi.
 
-**Il piano non è però chiuso, e la frase che lo diceva era falsa.** Una review
-avversariale esterna, eseguita quando le fasi risultavano tutte committate, ha
-trovato difetti che il piano non aveva mai enumerato. Vedi la Parte 6.
+**La frase che dichiarava il piano chiuso era però falsa quando è stata
+scritta.** Una review avversariale esterna, eseguita quando le fasi risultavano
+tutte committate, ha trovato tre difetti reali che il piano non aveva mai
+enumerato — due dei quali pubblicavano un valore falso. Sono ora tutti chiusi
+(Parte 6), ma la lezione resta: le undici voci della Parte 2 erano l'inventario
+dei difetti che sapevamo di avere, non di quelli che avevamo.
 
 ---
 
@@ -1051,7 +1054,7 @@ questi cinque non corrispondono a nessuna di quelle voci.
 | — | Leak `EVTID` fra pazienti | **Respinto** — viola un invariante EDSAN |
 | **L** | `bin_output()` su attivazione `lucene_llm` | **Chiuso** — pubblicava un valore falso |
 | **M** | La cache non vede gli helper autorati | **Chiuso** — pubblicava un valore falso |
-| **N** | Schema LLM annidato non validato | **Aperto** |
+| **N** | Schema LLM annidato non validato | **Chiuso** — pubblicava un record invalido come valido |
 | — | «mai guardato» pubblicato come 0 | **Non è un difetto** — due frasi sbagliate |
 
 **Il rilievo respinto.** La fixture faceva condividere un `EVTID` a due `PATID`.
@@ -1099,13 +1102,36 @@ seconda superficie di chiave. Sovra-raccogliere rifiuta soltanto una entry di
 cache; sotto-raccogliere servirebbe le risposte di un'altra attivazione, quindi
 l'asimmetria è voluta.
 
-**N — schema LLM annidato non validato. Aperto.** `.llm_result_column()` valida
-`TypeBasic` e `TypeEnum`; ogni altro tipo cade su `list(value)`. Un enum annidato
-invalido, o un campo annidato `required` omesso, viene pubblicato come `valid` e
-`complete`. `TypeObject` espone i figli in `S7::props(x)$properties`, `TypeArray`
-l'elemento in `S7::props(x)$items`; la requiredness sta sul figlio, non sul padre.
-`.llm_field_prototype()` va esteso per primo, perché `.llm_missing_value()` non ha
-conoscenza di tipo propria.
+**N — schema LLM annidato non validato. Chiuso.** `.llm_result_column()` validava
+`TypeBasic` e `TypeEnum`; ogni altro tipo cadeva su `list(value)`, senza guardarci
+dentro.
+
+*[misurato]* la stessa variabile, lo stesso errore del modello, a due profondità
+diverse. Enum **piatto** con valore fuori dall'enum: `failed`,
+`needs_review = TRUE`. Lo **stesso** enum annidato di un livello: pubblicato,
+`complete`, `needs_review = FALSE`. Un campo annidato `required` omesso: idem. E
+un `type_number()` che riceve `"grande"` pubblicava una colonna `chr` dove il
+run precedente ne aveva una `num` — la stessa instabilità di tipo che il `ptype`
+obbligatorio della Fase 2 ha eliminato per il `from_channel` deterministico.
+
+**La riparazione è additiva e va bene così.** La via sottrattiva — rifiutare al
+build uno schema annidato — è stata considerata e **scartata dal proprietario**:
+*«estrai ogni lesione documentata con sede e dimensione»* è un array di oggetti,
+ed è un caso d'uso che il motore deve gestire.
+
+*[verificato]* la **struttura funzionava già**: un array di oggetti pubblica una
+cella di list-column per unità di output, con il contenuto annidato intatto,
+`list()` quando non c'è niente. Il contratto largo — una riga per unità — regge,
+e `tidyr::unnest()` apre la forma lunga a valle. Mancava solo il controllo.
+
+`.llm_checked_value()` ricorre su `TypeObject` (figli in
+`S7::props(x)$properties`) e `TypeArray` (elemento in `S7::props(x)$items`); la
+requiredness sta sul figlio, non sul padre. `.llm_checked_field()` condivide fra
+tutti i livelli presenza, obbligatorietà e valore mancante tipizzato. Una
+violazione annidata è un `processing_error` del task, esattamente come una di
+primo livello: nessun vocabolario nuovo. `type_ignore()` e un `type_from_schema()`
+grezzo non dichiarano niente da controllare e passano invariati — è l'unica
+eccezione, ed è ciò che quei tipi significano.
 
 **«Mai guardato» pubblicato come 0 — non è un difetto, ed è istruttivo perché.**
 I riduttori costruiscono `hit = NA` per un task senza artefatti a `pre_selector`,

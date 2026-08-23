@@ -129,25 +129,14 @@ format_task_target <- function(task_row, group_by) {
     prototype[NA_integer_]
 }
 
-.llm_result_column <- function(result, name, type) {
+# One present value against one declared type, at any depth. A declared schema
+# either constrains the published record or it does not; constraining it at
+# depth 1 only was the worst of the three, because an author reading
+# `processing_status = "completed"` cannot see where the guarantee stopped.
+# `type_ignore()` and a raw `type_from_schema()` declare nothing to check and
+# pass through unchanged -- that is what they mean.
+.llm_checked_value <- function(value, type, path) {
     type_parts <- S7::props(type)
-    present <- name %in% names(result) && !is.null(result[[name]])
-    if (!present) {
-        if (isTRUE(type_parts$required)) {
-            stop("Structured response is missing required field '", name, "'.",
-                 call. = FALSE)
-        }
-        return(.llm_missing_value(type))
-    }
-
-    value <- result[[name]]
-    if (length(value) == 1L && is.atomic(value) && is.na(value)) {
-        if (isTRUE(type_parts$required)) {
-            stop("Structured response is missing required field '", name, "'.",
-                 call. = FALSE)
-        }
-        return(.llm_missing_value(type))
-    }
     if (inherits(type, "ellmer::TypeBasic")) {
         valid <- length(value) == 1L && !is.list(value) && switch(
             type_parts$type,
@@ -157,7 +146,7 @@ format_task_target <- function(task_row, group_by) {
             boolean = is.logical(value),
             FALSE)
         if (!valid) {
-            stop("Structured response field '", name,
+            stop("Structured response field '", path,
                  "' does not match its declared scalar type.", call. = FALSE)
         }
         return(value)
@@ -165,12 +154,63 @@ format_task_target <- function(task_row, group_by) {
     if (inherits(type, "ellmer::TypeEnum")) {
         if (length(value) != 1L || is.list(value) ||
             is.na(value) || !value %in% type_parts$values) {
-            stop("Structured response field '", name,
+            stop("Structured response field '", path,
                  "' does not match its declared enum.", call. = FALSE)
         }
         return(value)
     }
-    list(value)
+    if (inherits(type, "ellmer::TypeObject")) {
+        if (!is.list(value) || (length(value) && is.null(names(value)))) {
+            stop("Structured response field '", path,
+                 "' does not match its declared object.", call. = FALSE)
+        }
+        properties <- type_parts$properties
+        checked <- stats::setNames(
+            vector("list", length(properties)), names(properties))
+        for (child in names(properties)) {
+            checked[[child]] <- .llm_checked_field(
+                value, child, properties[[child]], paste0(path, "$", child))
+        }
+        return(checked)
+    }
+    if (inherits(type, "ellmer::TypeArray")) {
+        if (!is.list(value) || (length(value) && !is.null(names(value)))) {
+            stop("Structured response field '", path,
+                 "' does not match its declared array.", call. = FALSE)
+        }
+        items <- type_parts$items
+        return(lapply(seq_along(value), function(i) {
+            .llm_checked_value(value[[i]], items, sprintf("%s[[%d]]", path, i))
+        }))
+    }
+    value
+}
+
+# Presence, requiredness and the typed missing value, shared by the top-level
+# column and every field below it.
+.llm_checked_field <- function(container, name, type, path) {
+    type_parts <- S7::props(type)
+    absent <- !name %in% names(container) || is.null(container[[name]])
+    value <- if (absent) NULL else container[[name]]
+    if (!absent && length(value) == 1L && is.atomic(value) && is.na(value)) {
+        absent <- TRUE
+    }
+    if (absent) {
+        if (isTRUE(type_parts$required)) {
+            stop("Structured response is missing required field '", path, "'.",
+                 call. = FALSE)
+        }
+        prototype <- .llm_field_prototype(type)
+        return(if (is.list(prototype)) NULL else prototype[NA_integer_])
+    }
+    .llm_checked_value(value, type, path)
+}
+
+.llm_result_column <- function(result, name, type) {
+    checked <- .llm_checked_field(result, name, type, name)
+    scalar <- inherits(type, "ellmer::TypeBasic") ||
+        inherits(type, "ellmer::TypeEnum")
+    if (scalar) checked else list(checked)
 }
 
 # Shared citation resolution. Only IDs actually supplied to the model may

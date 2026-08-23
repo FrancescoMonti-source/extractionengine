@@ -1614,3 +1614,96 @@ test_that("a text activation is retrieved and asked once per protocol", {
     expect_null(
         cache_parameters(make_filtered("probe", identity)$channels$tabac))
 })
+
+test_that("a declared response schema constrains the record at every depth", {
+    lesion_concept <- concept_spec(
+        "lesions",
+        channels = list(text = text_channel(lucene_query("lesion"))))
+    response <- ellmer::type_object(
+        "Documented lesions.",
+        lesions = ellmer::type_array(
+            ellmer::type_object(
+                "one lesion",
+                side = ellmer::type_enum(c("left", "right"), "side"),
+                size_mm = ellmer::type_number("size in mm")),
+            "Every documented lesion."))
+    variable <- variable_spec(
+        name = "lesions",
+        channels = list(doc = use_channel(
+            "text", concept = lesion_concept, search_within = "PATID",
+            method = "lucene_llm", response = response, rationale = FALSE)),
+        output = from_channel("doc", group_by = "EVTID"))
+    cohort <- tibble::tibble(PATID = "P1", EVTID = "E1")
+    documents <- list(
+        coverage = tibble::tibble(
+            task_id = "P1::E1", PATID = "P1", EVTID = "E1",
+            coverage_state = "candidate"),
+        candidates = tibble::tibble(
+            task_id = "P1::E1", snippet_id = "S001", hit_ref = "H001",
+            PATID = "P1", EVTID = "E1", ELTID = "D1",
+            snippet_text = "Two lesions: left 12mm, right 4mm.",
+            hit_text = "lesions", RECDATE = as.Date("2026-03-01"),
+            RECTYPE = "CR"))
+
+    answer <- NULL
+    testthat::local_mocked_bindings(
+        .chat_metadata = function(chat) list(
+            provider = "test", model = "fake", params = list(),
+            temperature = 0, seed = 1L, max_tokens = 100),
+        .call_chat = function(chat, prompt, type, system_prompt, metadata) list(
+            status = "completed", result = answer,
+            error = NA_character_, n_tries = 1L, errors = character(),
+            started_at = Sys.time(), latency_ms = 0,
+            partial_response = NA_character_, output_tokens = 10,
+            inferred_finish_reason = "stop"),
+        .package = "extractionengine")
+    run_with <- function(value) {
+        answer <<- c(value, list(snippet_ids = "S001"))
+        run_variable(
+            variable, cohort, sources = list(documents = documents),
+            chat = structure(list(), class = "fake"))
+    }
+
+    # "Every documented lesion with its site and size" is an array of objects.
+    # It publishes one list-column cell per output unit, nested structure
+    # intact, so the wide one-row-per-unit contract still holds.
+    ok <- run_with(list(lesions = list(
+        list(side = "left", size_mm = 12),
+        list(side = "right", size_mm = 4))))
+    expect_identical(
+        list(
+            rows = nrow(ok$values),
+            cell = ok$values$lesions[[1]],
+            status = ok$channel_status$processing_status),
+        list(
+            rows = 1L,
+            cell = list(
+                list(side = "left", size_mm = 12),
+                list(side = "right", size_mm = 4)),
+            status = "completed"))
+
+    # A value violating the schema two levels down is a processing error,
+    # exactly as one violating it at the top level is. Depth is not a hole in
+    # the contract: `completed` must not mean "conforms as far as we looked".
+    bad_enum <- run_with(list(lesions = list(list(side = "up", size_mm = 12))))
+    expect_identical(
+        list(
+            cell = bad_enum$values$lesions[[1]],
+            status = bad_enum$channel_status$processing_status,
+            review = bad_enum$values$needs_review),
+        list(cell = NULL, status = "failed", review = TRUE))
+
+    # Same for a required nested field the model omitted entirely.
+    missing_child <- run_with(list(lesions = list(list(size_mm = 12))))
+    expect_identical(
+        missing_child$channel_status$processing_status, "failed")
+
+    # An empty array is a real answer -- no lesion documented -- and is not the
+    # same as a field the model failed to produce.
+    none <- run_with(list(lesions = list()))
+    expect_identical(
+        list(
+            cell = none$values$lesions[[1]],
+            status = none$channel_status$processing_status),
+        list(cell = list(), status = "completed"))
+})

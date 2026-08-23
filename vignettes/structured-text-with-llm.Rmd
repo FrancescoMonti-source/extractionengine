@@ -179,6 +179,15 @@ allergy_response <- ellmer::type_object(
 )
 ```
 
+A field may itself be an object, or an array of objects, when one record
+legitimately holds several of something — every documented lesion with its site
+and size, for instance. Such a field publishes one list-column cell per output
+unit holding the parsed structure, so `values` keeps its one row per unit and
+`tidyr::unnest()` opens it when you want the long form. The declared schema is
+enforced at every depth: a nested enum outside its allowed values, or a required
+nested field the model omitted, fails the task exactly as it would at the top
+level.
+
 The three instruction layers have separate jobs:
 
 | Instruction layer | Responsibility |

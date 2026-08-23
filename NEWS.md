@@ -151,6 +151,18 @@ migration.
 
 ## Other changes
 
+* A declared LLM response schema is now enforced at every depth. Only top-level
+  scalar and enum fields were checked; an object or an array of objects fell
+  through unvalidated, so a nested enum outside its allowed values, or a
+  required nested field the model omitted, was published with the task marked
+  `completed` and `needs_review = FALSE`. A nested violation is now a processing
+  error for that task, exactly as a top-level one is. Nothing changes for a
+  conforming response: an array of objects still publishes one list-column cell
+  per output unit with its structure intact, which is what a record holding
+  several of something — every documented lesion with its site and size — needs.
+  `type_ignore()` and a raw `type_from_schema()` declare nothing to check and
+  still pass through.
+
 * A text activation whose expressions call a function the author defined is no
   longer reused across the variables of a `run_protocol()`. The cache key is
   built from the rendered expression *text* plus the photographed `.env$`

@@ -394,6 +394,12 @@ signal it could fall back on is whether the response was grounded -- a fact abou
 the model call, not about the patient. Use `method = "lucene"` when Lucene-hit
 presence itself is the intended membership signal.
 
+A response field may be an object or an array of objects when one record holds
+several of something. It publishes one list-column cell per output unit, so
+`values` keeps one row per unit, and the declared schema is checked at every
+depth: a nested enum outside its values, or a required nested field the model
+omitted, fails the task exactly as a top-level one does.
+
 No candidate, model failure, or invalid schema still yields a stable result row
 with typed missing fields and separate selection/processing information. Raw
 response and provenance remain auditable. A grounded LLM response publishes
