@@ -318,7 +318,13 @@ that resolved definition under `spec`, obtained by walking the resolved
 specification rather than by copying it field by field, so an activation
 argument cannot be configured and left unrecorded; author code is rendered as
 text and a live environment is refused rather than embedded. Its `sources` entry
-records which physical column each source role resolved to, and its `roster`
+holds, per source the run knows about, which physical column each source role
+resolved to and a `digest` of the snapshot the executor read — the prepared
+frame for a registered source, so one hash covers the input, the cohort
+restriction, and the normalization; a tCorpus is hashed over its searchable
+content. Its `runtime` entry records the R version, the platform, and the
+version of the engine and of every package it imports, because normalization,
+retrieval, and transport are owned by dependencies. Its `roster`
 table records source-qualified unit counts at `PATID`, `EVTID`, and `ELTID`,
 including whether each supplied source was enumerable.
 Their output view follows the execution order `combine by -> filter by qualified

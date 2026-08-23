@@ -99,8 +99,15 @@ resolved configuration snapshot, not a chronological log. Its \code{spec} entry
 is the resolved definition the executor read, obtained by walking that
 specification rather than by copying it field by field, so an activation
 argument cannot be configured and left unrecorded; author code is recorded as
-text and a live environment is refused. \code{sources} records which physical
-column each source role resolved to. Its \code{roster}
+text and a live environment is refused. \code{sources} holds one entry per
+source the run knows about: which physical column each source role resolved to,
+and \code{class}, \code{n_rows}, and \code{digest}, a hash of the snapshot the
+executor read. For a registered source that snapshot is the prepared frame, so
+one hash covers the input, the cohort restriction, and the normalization; a
+tCorpus is hashed over its searchable content. An entry with an identity but no
+\code{roles} was supplied and not read by that variable, which is how the
+declared cohort appears. \code{runtime} records the R version, the platform, and
+the version of the engine and of every package it imports. Its \code{roster}
 table records source-qualified \code{PATID}, \code{EVTID}, and \code{ELTID} unit
 counts and whether each supplied source was enumerable. It records the
 terminal data flow as combine by, filter by qualified, group by, then evaluate

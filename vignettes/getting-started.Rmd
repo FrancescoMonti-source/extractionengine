@@ -484,8 +484,14 @@ manifest_lines <- capture.output(
   print(results$mean_k_in_qualified_stays$audit$execution_manifest)
 )
 
-# Omit only the run timestamp so that the rendered vignette is reproducible.
-cat(manifest_lines[!startsWith(manifest_lines, "Executed at:")], sep = "\n")
+# Omit the run timestamp and the engine/R versions so that the rendered
+# vignette is reproducible.
+volatile <- c("Engine: ", "Executed at:")
+cat(
+  manifest_lines[
+    !Reduce(`|`, lapply(volatile, startsWith, x = manifest_lines))],
+  sep = "\n"
+)
 ```
 
 `combine_keys` exposes the boolean relation evaluated at `combine$by` for keys

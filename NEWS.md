@@ -110,9 +110,9 @@ migration.
   `$executed_at` stay where they were. Inside a channel, `alias` is now `name`
   and `effective_selector` is now `selector`, the names the resolved
   specification uses. The per-channel `source_roles` and `runtime_roles` copies
-  are replaced by one `manifest$sources` entry per source, because a role
-  binding belongs to the source contract rather than to every alias that reads
-  it. A field the author left unset is now absent instead of present and `NULL`,
+  are replaced by one `manifest$sources` entry per source the run knows about,
+  because a role binding belongs to the source contract rather than to every
+  alias that reads it. A field the author left unset is now absent instead of present and `NULL`,
   so `names()` on a manifest channel lists what was configured; reading an unset
   field still returns `NULL`. **Migration:** insert `$spec` before `anchor`,
   `combine`, `output`, and `channels`, read the variable name from
@@ -162,3 +162,18 @@ migration.
   `FALSE`; otherwise invisible units cannot qualify. Observed hit keys must
   still belong to the enumerable scoped universe, so this does not bypass a
   channel's search boundary or window.
+
+* `audit$execution_manifest` records which data it read and what it ran on. Each
+  `manifest$sources` entry gains `class`, `n_rows`, and `digest`, a hash of the
+  snapshot the executor read — for a registered source that is the prepared
+  frame, so one hash covers the caller's input, the cohort restriction, and the
+  normalization together. A tCorpus is hashed over its searchable content and
+  not only its metadata. Every supplied entry is recorded, the declared cohort
+  included; an entry with an identity but no `roles` was supplied and not read
+  by that variable. `manifest$runtime` records the R version, the platform, and
+  the version of the engine and of every package it imports, because redsan
+  owns normalization, corpustools owns retrieval, and ellmer owns transport:
+  the same definition over the same data can answer differently under different
+  versions. The identity is computed once per prepared bundle, so a protocol
+  pays for it once and every variable of a study records the same snapshot.
+  *Measured:* 3.5 ms for a 4.55 MB prepared frame, 0.4% of that run.

@@ -401,6 +401,49 @@ EE_SOURCE_PREPARERS <- list(
     sources
 }
 
+# A result is reproducible only if it says which data it read. `digest` hashes
+# the snapshot the EXECUTOR read: for a registered source that is the prepared
+# frame, so one hash covers the caller's input, the cohort restriction, and the
+# normalization together. It is computed once for the bundle, next to the
+# roster, so a protocol pays for it once instead of once per variable.
+#
+# A tCorpus is hashed over its searchable content and not only its metadata:
+# two corpora holding the same documents with different text are different
+# snapshots, and a Lucene query answers differently over them.
+.source_snapshot_view <- function(source) {
+    if (is.data.frame(source)) return(source)
+    if (.is_tcorpus(source)) {
+        return(list(
+            meta = as.data.frame(source$get_meta(copy = TRUE)),
+            tokens = as.data.frame(source$tokens)))
+    }
+    if (is.list(source)) return(lapply(source, .source_snapshot_view))
+    source
+}
+
+.build_source_identity <- function(sources) {
+    identity <- lapply(sources, function(source) {
+        view <- .source_snapshot_view(source)
+        list(
+            class = class(source)[[1]],
+            n_rows = if (is.data.frame(view)) nrow(view) else NULL,
+            digest = rlang::hash(view))
+    })
+    names(identity) <- names(sources)
+    identity
+}
+
+# Every entry the caller supplied is recorded, not only the registered ones:
+# the declared cohort travels here too, and it is part of what the run read.
+# Presence means supplied; `roster` is what says the engine could enumerate it.
+.attach_source_identity <- function(sources) {
+    if (is.null(sources) || !is.null(attr(sources, "ee_source_identity"))) {
+        return(sources)
+    }
+    attr(sources, "ee_source_identity") <- .build_source_identity(sources)
+    sources
+}
+
 .execution_roster_manifest <- function(roster) {
     if (!inherits(roster, "ee_execution_roster")) {
         return(tibble::tibble(

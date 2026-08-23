@@ -1273,3 +1273,83 @@ test_that("the execution manifest mirrors the resolved spec without live objects
                 sent$system_prompt, DEFAULT_LLM_SYSTEM_PROMPT)),
         list(recorded = sent$system_prompt, sent_the_package_default = TRUE))
 })
+
+test_that("the manifest identifies the source snapshot and the runtime", {
+    biology <- tibble::tibble(
+        PATID = c("P1", "P1", "P2"), EVTID = c("E1", "E1", "E2"),
+        ELTID = c("L1", "L2", "L3"),
+        DATEXAM = as.Date("2026-01-01") + 0:2,
+        TYPEANA = "K.K", NUMRES = c(4.2, 5.1, 3.9), STRRES = NA_character_)
+    potassium <- concept_spec(
+        "potassium",
+        channels = list(result = lab_channel(selector = analyte("K.K"))))
+    make_variable <- function(name) variable_spec(
+        name = name,
+        channels = list(result = use_channel(
+            "result", concept = potassium, search_within = "PATID")),
+        output = from_channel(
+            "result", group_by = "PATID", value = mean(NUMRES),
+            ptype = double()))
+    cohort <- tibble::tibble(PATID = "P1")
+    digest_of <- function(sources) {
+        run <- run_variable(make_variable("k_mean"), cohort, sources = sources)
+        run$audit$execution_manifest$sources$biology$digest
+    }
+
+    # The digest identifies the snapshot the EXECUTOR read, which is the
+    # prepared frame: one hash covers the caller's input, the cohort
+    # restriction, and the normalization. A row belonging to a patient outside
+    # the cohort is therefore invisible to it. It has to be appended after the
+    # kept rows: source_row_id carries the original row position, so inserting
+    # ahead of them would renumber rows the run really did read.
+    baseline <- digest_of(list(cohort = cohort, biology = biology))
+    outside <- dplyr::bind_rows(biology, tibble::tibble(
+        PATID = "P9", EVTID = "E9", ELTID = "L9",
+        DATEXAM = as.Date("2026-02-01"), TYPEANA = "K.K", NUMRES = 1,
+        STRRES = NA_character_))
+    changed <- biology
+    changed$NUMRES[[1]] <- 9.9
+    expect_identical(
+        list(
+            outside_the_cohort = digest_of(
+                list(cohort = cohort, biology = outside)) == baseline,
+            inside_the_cohort = digest_of(
+                list(cohort = cohort, biology = changed)) == baseline),
+        list(outside_the_cohort = TRUE, inside_the_cohort = FALSE))
+
+    # A protocol prepares and hashes once, so every variable of a study records
+    # the same snapshot: the identity is what makes "the same sources" a fact
+    # rather than an assumption.
+    protocol <- run_protocol(
+        list(make_variable("k_one"), make_variable("k_two")),
+        cohort, sources = list(cohort = cohort, biology = biology))
+    manifests <- lapply(protocol, function(run) run$audit$execution_manifest)
+    expect_identical(
+        manifests$k_one$sources$biology$digest,
+        manifests$k_two$sources$biology$digest)
+
+    # The declared cohort is supplied and read, and is recorded; it binds no
+    # source roles, because it is not a registered EDSAN source.
+    expect_identical(
+        list(
+            names = names(manifests$k_one$sources$cohort),
+            n_rows = manifests$k_one$sources$cohort$n_rows),
+        list(names = c("class", "n_rows", "digest"), n_rows = 1L))
+
+    # The versions that can change a value without the definition changing:
+    # redsan owns normalization, corpustools retrieval, ellmer transport. The
+    # list is read from the installed DESCRIPTION, so an empty parse would show
+    # up here rather than as a silently version-less manifest.
+    runtime <- manifests$k_one$runtime
+    expect_identical(
+        list(
+            engine = runtime$packages[["extractionengine"]],
+            owners = all(
+                c("redsan", "corpustools", "ellmer") %in%
+                    names(runtime$packages)),
+            r = runtime$r),
+        list(
+            engine = as.character(utils::packageVersion("extractionengine")),
+            owners = TRUE,
+            r = as.character(getRversion())))
+})

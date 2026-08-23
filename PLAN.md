@@ -877,15 +877,43 @@ la Fase 1.4 ha già rifiutato. La camminata è ciò che rende vera «il manifest
 la spec risolta» senza quel prezzo. Un ambiente raggiunto come valore adesso
 **fallisce** invece di essere incluso in silenzio.
 
-**5.2 — Identità dello snapshot delle sorgenti e versioni di
-pacchetto/runtime nel manifest.** Devono precedere qualunque cache fra
-variabili.
+**5.2 — Identità dello snapshot delle sorgenti e versioni di pacchetto/runtime
+nel manifest. Chiuso il 2026-08-23.**
+
+Ogni voce di `manifest$sources` porta `class`, `n_rows` e `digest`. Il digest è
+l'hash dello snapshot che **l'esecutore** ha letto — per una sorgente registrata
+il frame preparato, quindi un solo hash copre input del chiamante, restrizione
+di coorte e normalizzazione insieme. Un tCorpus è hashato su metadati **e**
+token: due corpora con gli stessi documenti e testo diverso sono snapshot
+diversi, e una query Lucene risponde diversamente. `manifest$runtime` registra
+versione di R, piattaforma e versione del motore e di ogni pacchetto importato,
+letta dal DESCRIPTION installato invece che riscritta a mano.
+
+Conseguenza visibile, custodita dal test permanente: una riga di un paziente
+fuori coorte **non** sposta il digest, una modifica dentro la coorte sì. Tutto
+ciò che il chiamante ha passato è registrato, coorte dichiarata compresa:
+presenza significa fornita, `roles` significa letta da quella variabile,
+`roster` significa enumerabile.
+
+*[misurato]* l'identità costa **3,5 ms su un frame preparato di 4,55 MB** — lo
+0,4 % di quella run — ed è pagata **una volta per protocollo**, perché è
+attaccata al bundle preparato accanto al roster. Il manifest stesso è 13,7 KB
+sul benchmark da 2 000 task.
 
 **5.3 — I semplici parametri `.env`.** Il manifest **non** serializza l'ambiente
 R. Registra però i semplici valori atomici letti esplicitamente con `.env$nome`:
 vengono fotografati una volta prima dell'esecuzione e la stessa fotografia
 alimenta calcolo e manifest. Funzioni locali, closure, active binding e oggetti
 arbitrari restano codice di authoring versionato, non payload del manifest.
+
+**Decisione chiusa dal proprietario (2026-08-23): un valore `.env$` non semplice
+resta letto dal vivo ed è registrato solo per nome**, marcato esplicitamente
+come non fotografato. Non lo si serializza — riaprirebbe il rifiuto della
+Parte 4, e una lista può contenere una closure — e non lo si rifiuta al build:
+`.env$weight_options$remove_missing` è esattamente l'idioma che la Fase 1.3 ha
+reso obbligatorio. Un manifest che omettesse la dipendenza in silenzio sarebbe
+la solita bugia di audit; uno che la nomina dice chiaramente che quella run non
+è riproducibile dal solo manifest.
 
 **5.4 — Riuso dei canali fra variabili, ristretto al recupero Lucene e alle
 chiamate al modello.** Il profilo dice che l'esecutore strutturato è il 2,1 % di
@@ -964,7 +992,7 @@ la prima preparazione costosa delle sorgenti; 1.4 è una dichiarazione di confin
 non plumbing da coordinare con 1.3.
 
 **Stato al 2026-08-23.** Fasi 0, 1, 2, 3, 3b e 4 sono committate sul ramo
-`phase-0-cleanup`, che non è ancora entrato in `master`, e la Fase 5 è aperta
-con la 5.1 chiusa. **Non resta nessun difetto conosciuto che pubblichi un valore
-falso**, e tutti gli undici difetti della Parte 2 e le decisioni di fine Fase 4
-sono chiusi.
+`phase-0-cleanup`, che non è ancora entrato in `master`; della Fase 5 sono
+chiuse la 5.1 e la 5.2. **Non resta nessun difetto conosciuto che pubblichi un
+valore falso**, e tutti gli undici difetti della Parte 2 e le decisioni di fine
+Fase 4 sono chiusi.

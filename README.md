@@ -490,7 +490,13 @@ candidate, has no call row. The
 not a chronological activity log. Its `spec` entry is the resolved definition the
 executor read, with author code — the data-masked expressions, the `select_event`
 closure, the validated combine expression — recorded as text rather than as live
-objects. `sources` records which physical column each source role resolved to.
+objects. `sources` holds one entry per source the run knows about: which
+physical column each source role resolved to, and `class`, `n_rows`, and
+`digest`, a hash of the snapshot the executor read. An entry with an identity
+but no `roles` was supplied and not read by that variable, which is how the
+declared cohort appears. `runtime` records the R version, the platform, and the
+version of the engine and of every package it imports, because redsan owns
+normalization, corpustools owns retrieval, and ellmer owns transport.
 The `roster` table records, per supplied source and identity level, how many
 units were enumerated; a pre-retrieved text input is marked non-enumerable.
 Combination runs additionally keep `overlap`, a tabular Venn/UpSet-style count

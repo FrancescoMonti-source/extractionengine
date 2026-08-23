@@ -2829,3 +2829,69 @@ model call was made.
 **Files changed.** `R/run_variable.R`, `R/spec.R`,
 `tests/testthat/test-current-contracts.R`, `NEWS.md`, `README.md`, `DESIGN.md`,
 `man/run_variable.Rd`, `PLAN.md`, and this entry.
+
+## Phase 5.2 the manifest says which data it read and what it ran on (2026-08-23)
+
+**Boundary.** The second Phase 5 slice. It adds facts to
+`audit$execution_manifest` and changes no published value. It exists because
+Phase 5.4 cannot key a cross-variable cache soundly without it: "the same
+sources" has to be a recorded fact before it can be an assumption a cache
+relies on.
+
+**Change.** Each `manifest$sources` entry gains `class`, `n_rows`, and `digest`.
+`digest` is `rlang::hash()` of the snapshot the **executor** read, which for a
+registered source is the prepared frame -- so one hash covers the caller's
+input, the cohort restriction, and redsan's normalization together. A tCorpus
+is hashed over its metadata *and* its tokens: two corpora holding the same
+documents with different text are different snapshots, and a Lucene query
+answers differently over them. `manifest$runtime` records the R version, the
+platform, and the version of the engine and of every package it imports.
+
+**Why the prepared frame and not the caller's input.** The prepared frame is
+what the run actually read, and preparation is deterministic given the input,
+the cohort, and the package versions -- all three of which are now recorded.
+Hashing it is therefore strictly stronger than hashing the input. The visible
+consequence, pinned by the sentinel: a row belonging to a patient outside the
+cohort does not move the digest, while changing a value inside it does. The
+sentinel appends that row rather than prepending it, and says why:
+`source_row_id` carries the original row position, so inserting ahead of the
+kept rows would renumber rows the run really did read.
+
+**The import list is read, not restated.** `.manifest_runtime()` parses
+`Imports` from the installed DESCRIPTION. A new dependency is recorded without
+an edit, and the sentinel asserts that redsan, corpustools, and ellmer are all
+named -- an empty parse would otherwise produce a silently version-less
+manifest that still looked populated.
+
+**Everything supplied is recorded, including the cohort.** Presence in
+`manifest$sources` means supplied; `roles` means the variable read it; `roster`
+means the engine could enumerate it. The declared cohort is a source entry with
+an identity and no roles.
+
+**Paid once per protocol.** The identity is attached to the prepared bundle
+beside `ee_roster`, so `run_protocol()` hashes once and every variable of a
+study records the same snapshot. *[misurato]* 3,5 ms for a 4,55 MB prepared
+frame plus its cohort -- 0,4 % of that 0,81 s run; the manifest itself is
+13,7 KB on the 2 000-task benchmark.
+
+**One print line, one vignette edit.** The manifest print gained
+`Engine: extractionengine <v> on R <v>`. The getting-started vignette already
+stripped `Executed at:` to stay reproducible; it now strips both.
+
+**Sentinel.** `"the manifest identifies the source snapshot and the runtime"`
+covers the four claims: the digest tracks the prepared snapshot and not the
+caller's whole table; a protocol records one shared digest across its
+variables; the declared cohort is recorded with an identity and no roles; and
+the runtime names the engine, the R version, and the three packages that own
+normalization, retrieval, and transport.
+
+**Verification.** All 89 current-contract expectations pass with no warnings
+(85 before). The seven Phase 0 differential cases are unchanged from
+`before-phase5.rds`. A full source build creates both vignettes and
+`R CMD check --no-manual --no-build-vignettes` finishes with `Status: 1 NOTE`,
+the pre-existing `NEWS.md` heading. No real model call was made.
+
+**Files changed.** `R/data.R`, `R/run_variable.R`,
+`tests/testthat/test-current-contracts.R`, `NEWS.md`, `README.md`, `DESIGN.md`,
+`man/run_variable.Rd`, `vignettes/getting-started.Rmd`, `PLAN.md`, and this
+entry.

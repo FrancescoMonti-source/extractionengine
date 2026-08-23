@@ -1649,29 +1649,58 @@
     c(list(kind = "index_event"), unclass(anchor))
 }
 
-# Which physical column each source role resolved to. A role binding belongs to
-# the source contract rather than to the activation, so it is recorded once per
-# source instead of copied into every alias that reads it. A text channel binds
-# two further roles at the channel runtime, because the snippet payload is not
-# part of the typed tCorpus metadata view and no source contract names it.
-.manifest_sources <- function(variable) {
+# One entry per source the run knows about, holding everything the run knows
+# about it. `roles` is which physical column each source role resolved to: a
+# property of the source contract rather than of the activation, so it is
+# recorded once per source instead of copied into every alias that reads it. A
+# text channel binds two further roles at the channel runtime, because the
+# snippet payload is not part of the typed tCorpus metadata view and no source
+# contract names it. `digest` and `n_rows` identify the snapshot that was read.
+# A source with an identity but no roles was supplied and not read by this
+# variable; the declared cohort is such an entry.
+.manifest_sources <- function(variable, sources = NULL) {
     source <- unname(vapply(
         variable$channels, function(ch) ch$source, character(1)))
     type <- unname(vapply(
         variable$channels, function(ch) ch$type, character(1)))
-    snapshot <- lapply(unique(source), function(name) {
+    identity <- attr(sources, "ee_source_identity") %||% list()
+    names <- union(unique(source), names(identity))
+    snapshot <- lapply(names, function(name) {
         spec <- EE_SOURCES[[name]]
-        list(
-            roles = if (is.null(spec)) NULL else source_roles(spec),
+        c(list(
+            roles = if (is.null(spec) || !name %in% source) NULL else {
+                source_roles(spec)
+            },
             runtime_roles = if (any(type[source == name] == "text")) {
                 list(text = "snippet_text", evidence_ref = "hit_ref")
-            } else NULL)
+            } else NULL),
+          identity[[name]] %||% list())
     })
-    names(snapshot) <- unique(source)
+    names(snapshot) <- names
     .manifest_snapshot(snapshot)
 }
 
-.build_execution_manifest <- function(variable, roster = NULL) {
+# Same definition, same data, different package versions can still produce a
+# different value: redsan owns normalization, corpustools owns retrieval, ellmer
+# owns transport. The engine's own version and the version of every package it
+# imports are therefore part of the record, together with the R version and
+# platform. The import list is read from the installed DESCRIPTION rather than
+# restated here, so a new dependency is recorded without an edit.
+.manifest_runtime <- function() {
+    imports <- utils::packageDescription("extractionengine")$Imports
+    packages <- trimws(sub("[(].*", "", strsplit(imports %||% "", ",")[[1]]))
+    packages <- c("extractionengine", packages[nzchar(packages)])
+    list(
+        r = as.character(getRversion()),
+        platform = R.version$platform,
+        packages = vapply(packages, function(package) {
+            as.character(tryCatch(
+                utils::packageVersion(package),
+                error = function(cnd) NA_character_))
+        }, character(1)))
+}
+
+.build_execution_manifest <- function(variable, sources = NULL) {
     # The engine sends its own system prompt when an LLM activation does not
     # author one, so the manifest records the text that ran rather than the
     # authored silence.
@@ -1686,8 +1715,9 @@
     structure(
         list(
             spec = spec,
-            sources = .manifest_sources(variable),
-            roster = .execution_roster_manifest(roster),
+            sources = .manifest_sources(variable, sources),
+            roster = .execution_roster_manifest(attr(sources, "ee_roster")),
+            runtime = .manifest_runtime(),
             executed_at = Sys.time()),
         class = c("ee_execution_manifest", "list"))
 }
@@ -1762,7 +1792,10 @@ print.ee_execution_manifest <- function(x, ...) {
                 "\n", sep = "")
         }
     }
-    cat("\nExecuted at: ", format(x$executed_at, usetz = TRUE), "\n", sep = "")
+    cat("\nEngine: extractionengine ",
+        x$runtime$packages[["extractionengine"]], " on R ", x$runtime$r,
+        "\n", sep = "")
+    cat("Executed at: ", format(x$executed_at, usetz = TRUE), "\n", sep = "")
     invisible(x)
 }
 
@@ -1916,6 +1949,7 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
     tasks <- .resolve_cohort(variable, cohort, sources)
     sources <- .prepare_execution_sources(sources, tasks)
     sources <- .attach_execution_roster(sources, tasks)
+    sources <- .attach_source_identity(sources)
     roster <- attr(sources, "ee_roster")
     # Anchor first: a select_event closure may EMIT tasks (one per selected
     # event), and the grain guard must see the emitted universe, not the
@@ -2032,7 +2066,7 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
         counts = published$.audit_counts,
         llm_calls = published$.audit_llm_calls,
         lineage = published$.audit_lineage,
-        execution_manifest = .build_execution_manifest(variable, roster))
+        execution_manifest = .build_execution_manifest(variable, sources))
     if (is.data.frame(out$overlap)) audit$overlap <- out$overlap
     if (is.data.frame(out$combine_keys)) {
         audit$combine_keys <- published$.audit_combine_keys
@@ -2104,6 +2138,7 @@ run_protocol <- function(variables, cohort = NULL, sources = NULL,
         protocol_cohort <- .cohort_frame(cohort, sources)
         sources <- .prepare_execution_sources(sources, protocol_cohort)
         sources <- .attach_execution_roster(sources, protocol_cohort)
+        sources <- .attach_source_identity(sources)
     }
 
     results <- lapply(variables, run_variable, cohort = cohort, sources = sources,
