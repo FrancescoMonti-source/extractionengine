@@ -1248,7 +1248,8 @@
                                    key = keys))
 }
 
-.roster_units_for_channel <- function(roster, tasks, channel, level) {
+.roster_units_for_channel <- function(roster, tasks, channel, level,
+                                      require_complete) {
     if (!inherits(roster, "ee_execution_roster")) {
         stop("Fine-grain combine requires a run-level source roster.",
              call. = FALSE)
@@ -1261,7 +1262,7 @@
     unavailable <- roster$availability$source[
         roster$availability$source %in% required_sources &
             !roster$availability$enumerated]
-    if (length(unavailable)) {
+    if (length(unavailable) && require_complete) {
         stop("Fine-grain combine cannot enumerate source snapshot(s): ",
              paste(unavailable, collapse = ", "),
              ". Pre-retrieved text inputs are query results, not rosters.",
@@ -1293,10 +1294,12 @@
         key = as.character(scoped_rows[[level]])))
 }
 
-.scoped_roster_universe <- function(variable, tasks, roster, channels, level) {
+.scoped_roster_universe <- function(variable, tasks, roster, channels, level,
+                                    require_complete) {
     units <- lapply(channels, function(channel_name) {
         .roster_units_for_channel(
-            roster, tasks, .channel_def(variable, channel_name), level)
+            roster, tasks, .channel_def(variable, channel_name), level,
+            require_complete)
     })
     universe <- units[[1L]]
     if (length(units) > 1L) {
@@ -1352,8 +1355,17 @@
             .channel_combine_keys(channel_results[[ch]], combine_level, ch,
                                   task_ids[vectors[[ch]] %in% TRUE])
         }), referenced)
+        # A missing source snapshot matters exactly when a unit with no observed
+        # hits could qualify. Otherwise its invisible units all evaluate FALSE
+        # and cannot enter the result. Observed keys must still fall inside the
+        # enumerable scoped universe below; this relaxation does not invent one.
+        empty_membership <- stats::setNames(
+            rep(list(FALSE), length(referenced)), referenced)
+        require_complete_roster <- isTRUE(
+            .eval_hitset_expr(combine$ast, empty_membership))
         universe <- .scoped_roster_universe(
-            variable, tasks, roster, referenced, combine_level)
+            variable, tasks, roster, referenced, combine_level,
+            require_complete_roster)
         pair_of <- function(d) paste(d$task_id, d$key, sep = "\r")
         u_pairs <- pair_of(universe)
         observed_pairs <- pair_of(dplyr::bind_rows(keysets))

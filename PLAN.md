@@ -711,7 +711,7 @@ sosterrebbe una ricerca mai avvenuta. *[misurato]* su 2 000 task con un gate al
 tempo invariato entro il rumore — il guadagno vero è sul modello, dove le
 chiamate passano da una per task con candidati a una per task **qualificato**.
 
-**La Fase 4 è chiusa.** Restano soltanto le due decisioni di fine fase.
+**La Fase 4 è chiusa, incluse le due decisioni di fine fase.**
 
 **Quattro cose da fare bene:**
 
@@ -790,27 +790,37 @@ trasforma già un tCorpus in quel frame.
 La guardia della Fase 1.2 non è stata scritta: il roster è arrivato prima, e la
 classe di variabili che doveva rifiutare adesso risponde correttamente.
 
-**Due decisioni aperte, da prendere prima di chiudere la Fase 4.**
+**Decisioni di fine fase — entrambe chiuse.**
 
-**a) La crescita della lineage va misurata sul profilo vero.** *[misurato]* su
-300 righe sorgente e 10 task EVTID:
+**a) Misura chiusa: la lineage dimezza il risultato originale, ma non autorizza
+una nuova rappresentazione.** Il profilo che produsse i 25,5 MB era sintetico e
+riproducibile: 2 000 task PATID, 10 righe di biologia per task, un solo canale
+`from_channel()` che usa tutte le righe. Rieseguito sul nucleo attuale:
 
-| `search_within` | righe di lineage | lineage | risultato totale |
-|---|---:|---:|---:|
-| `PATID` | 3 000 | 0,352 MB | 0,376 MB |
-| `EVTID` | 300 | 0,094 MB | 0,118 MB |
+| | prima | dopo Fase 4 |
+|---|---:|---:|
+| sorgente | 2,8 MB | 2,810 MB |
+| risultato totale | 25,5 MB | 12,593 MB |
+| viste pubbliche (`values`, status, evidence) | 5,9 MB | 5,915 MB |
+| audit ridondante / lineage | 19,3 MB | 6,350 MB |
+| righe di lineage | — | 20 000, tutte `used` |
 
-La moltiplicazione **righe × task** è confermata: `pre_selector` è l'unico stadio
-la cui cardinalità non è limitata da niente che l'autore abbia dichiarato — tutti
-gli altri sono ritagliati dal selettore. A questa scala non è un problema, ma
-**la Fase 4 non può dichiarare di aver abbattuto i 25,5 MB finché lo stesso
-benchmark non gira sul profilo reale.**
+Il risultato passa da ~9,1× a ~4,5× la sorgente. Il vecchio accumulo di frame è
+sparito; il costo rimasto è diviso quasi a metà fra evidence pubblica (5,561 MB)
+e lineage (6,350 MB). Questo benchmark non esercita la moltiplicazione
+task-EVTID × righe-PATID: ha un solo task PATID per paziente. Quella crescita
+esiste soltanto per task EVTID con `search_within = "PATID"`; con
+`search_within = "EVTID"` ogni task vede soltanto le righe del proprio ricovero.
 
-Non si sostituiscono le righe con soli conteggi adesso: si perderebbe l'audit per
-artefatto, che è il motivo per cui la relazione esiste. Prima si misura; solo se
-la misura lo impone si valuta una rappresentazione fattorizzata.
+Non si fattorizza adesso. Nel profilo originale ogni artefatto compare una volta,
+quindi non esiste una ripetizione task-artefatto da condividere; eliminare in una
+simulazione i due campi esattamente duplicati riduce la lineage a 4,412 MB, mentre
+l'evidence resta 5,561 MB. Una seconda rottura del contratto per quel guadagno
+non è meritata. Si riapre su un protocollo multi-variabile reale, misurando anche
+la distribuzione effettiva di `search_within = "PATID"` e `"EVTID"`.
 
-**b) La guardia sul roster incompleto è più conservativa del necessario.**
+**b) Decisione chiusa: la guardia sul roster incompleto usa il criterio
+algebrico esatto.**
 *[verificato]* a `ELTID` conta soltanto la sorgente del canale, quindi un input
 testuale pre-recuperato estraneo **non** blocca un combine sulla sola biologia —
 `.roster_units_for_channel()` è corretto lì. A `PATID`/`EVTID` invece richiede
@@ -818,15 +828,20 @@ che **tutte** le sorgenti della run siano enumerabili, ed è una scelta
 deliberata: l'universo condiviso serve a trovare unità che non hanno righe nelle
 sorgenti partecipanti.
 
-Ma per le espressioni positive quella severità non compra niente. Regola
-possibile, ed è **lo stesso criterio della vecchia 1.2 riusato nel posto giusto**:
+Ma per le espressioni che non possono qualificare un'unità senza hit quella
+severità non compra niente. La decisione adottata è **lo stesso criterio della
+vecchia 1.2 riusato nel posto giusto**:
 
 > - se `f(FALSE,…,FALSE) = TRUE`, un roster incompleto può cambiare la risposta
 >   → fallire;
 > - altrimenti le unità invisibili non possono qualificarsi comunque → la
 >   sorgente non enumerabile si può ignorare.
 
-Da trattare come decisione esplicita, non come blocco immediato.
+La guardia valuta l'AST validato con tutti i canali `FALSE`. Se il risultato è
+`TRUE`, richiede il roster completo; altrimenti ignora la sorgente non
+enumerabile. La verifica che ogni hit osservato ricada comunque nell'universo
+enumerato e scoped resta intatta: il rilassamento non inventa unità né aggira
+scope e finestre.
 
 ---
 
@@ -884,10 +899,11 @@ insistito che un rilievo "assorbito per omissione" è peggio di uno rifiutato.
   500/1k/2k/4k task; il prototipo cresce 0,07 → 0,14 → 0,30 → 0,55. La Fase 4
   resta necessaria per il contratto e la memoria trattenuta, non per attribuirsi
   in anticipo un guadagno che 1.1 potrebbe già comprare.
-- **La memoria è il vincolo vero, non la velocità.** 25,5 MB restituiti per
-  variabile su 2,8 MB di sorgente; ~250 MB per variabile a 20 000 pazienti; ~10 GB
-  per un protocollo da 40 variabili. Non è una raffinatezza prestazionale: è ciò
-  che fa **fallire** `run_protocol()` invece di renderlo lento.
+- **La memoria resta il vincolo vero, non la velocità.** La Fase 4 porta il
+  benchmark da 25,5 a 12,593 MB per variabile su 2,810 MB di sorgente. Una
+  proiezione lineare resta ~126 MB per variabile e ~5 GB per 40 variabili a
+  20 000 pazienti: il vecchio frame ridondante è sparito, ma un protocollo reale
+  va ancora misurato prima di dichiarare risolto il vincolo.
 - **`act_channel()` non è una cancellazione a rischio zero.** È zero in pratica
   (nessun chiamante) ma è una rimozione di API.
 
@@ -920,6 +936,4 @@ non plumbing da coordinare con 1.3.
 **Stato al 2026-08-23.** Fasi 0, 1, 2, 3, 3b e 4 sono committate sul ramo
 `phase-0-cleanup`, che non è ancora entrato in `master`. **Non resta nessun
 difetto conosciuto che pubblichi un valore falso**, e tutti gli undici difetti
-della Parte 2 sono chiusi. Restano le due decisioni di fine Fase 4 (crescita
-della lineage sul profilo vero, guardia sul roster incompleto) e l'intera
-Fase 5.
+della Parte 2 e le decisioni di fine Fase 4 sono chiusi. Resta l'intera Fase 5.

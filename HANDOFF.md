@@ -2716,3 +2716,45 @@ an invisible unit.
 `tests/testthat/test-current-contracts.R`, `NEWS.md`, `README.md`, `DESIGN.md`,
 `man/run_variable.Rd`, `vignettes/getting-started.Rmd`,
 `vignettes/structured-text-with-llm.Rmd`, `PLAN.md`, and this entry.
+
+## Phase 4 end decisions: incomplete rosters and measured lineage (2026-08-23)
+
+**Incomplete-roster policy.** A fine-grain combine now requires every relevant
+source snapshot to be enumerable exactly when its validated expression can
+qualify a unit with no observed hits: evaluate the AST with every referenced
+channel set to `FALSE`; if the result is `TRUE`, an incomplete roster is fatal.
+Otherwise invisible units cannot qualify, so a non-enumerable source may be
+ignored. This is the former Phase 1.2 criterion applied where the universe is
+actually constructed.
+
+**Boundary retained.** Relaxing completeness does not expand the universe.
+Every observed key must still belong to the enumerable universe after all
+participating channel scopes and windows have been intersected. A hit from a
+pre-retrieved input therefore cannot invent a unit or bypass another channel's
+declared search boundary.
+
+**Sentinel.** The new test adds a non-enumerable pre-retrieved document source
+to a biology-only EVTID combine. `a & !b` succeeds and selects only the biology
+EVTID supported by `a`; `!a & !b` fails because an unseen document EVTID could
+change the answer.
+
+**Original memory benchmark reproduced.** The profile behind the old 25.5 MB
+measurement is synthetic: 2 000 PATID tasks, ten biology rows per task, and one
+deterministic `from_channel()` using all rows. The current result is 12.593 MB
+over a 2.810 MB source: 5.915 MB in public views and 6.350 MB in 20 000 lineage
+rows, all at `used`. The old executor-frame audit was 19.3 MB. This benchmark
+has one PATID task per patient; it does not exercise EVTID tasks searching a
+PATID-wide window.
+
+**Representation decision.** Keep lineage flat. In this profile each artifact
+occurs once, so there is no task-artifact repetition to factor out. Removing the
+two exactly duplicated fields in a simulation reduced lineage to 4.412 MB while
+public evidence alone remained 5.561 MB. That saving does not earn another
+public-contract break. Reconsider only against a real multi-variable protocol,
+including its actual mix of PATID-wide and EVTID-local searches.
+
+**Verification.** All 80 current-contract expectations pass. The seven Phase 0
+differential cases are unchanged from `after-realign.rds`.
+
+**Files changed.** `R/run_variable.R`,
+`tests/testthat/test-current-contracts.R`, `NEWS.md`, `PLAN.md`, and this entry.

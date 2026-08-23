@@ -653,6 +653,61 @@ test_that("fine-grain negation uses the scoped source roster", {
         sort(document_run$audit$combine_keys$ELTID), c("D1", "D2"))
 })
 
+test_that("an incomplete roster fails only when invisible units can qualify", {
+    biology <- tibble::tibble(
+        PATID = "P1",
+        EVTID = c("E1", "E2", "E3"),
+        ELTID = c("L1", "L2", "L3"),
+        DATEXAM = as.Date("2026-02-01"),
+        TYPEANA = c("A", "B", "OTHER"),
+        NUMRES = 1,
+        STRRES = NA_character_)
+    marker_a <- concept_spec(
+        "marker_a", channels = list(a = lab_channel(selector = analyte("A"))))
+    marker_b <- concept_spec(
+        "marker_b", channels = list(b = lab_channel(selector = analyte("B"))))
+    make_variable <- function(expr) variable_spec(
+        name = "incomplete_roster",
+        channels = list(
+            a = use_channel(
+                "a", concept = marker_a, search_within = "PATID"),
+            b = use_channel(
+                "b", concept = marker_b, search_within = "PATID")),
+        combine = combine_channels(expr, by = "EVTID"),
+        output = bin_output(group_by = "PATID"))
+    pre_retrieved_documents <- list(
+        coverage = tibble::tibble(
+            task_id = "P1", PATID = "P1", coverage_state = "no_candidate"),
+        candidates = tibble::tibble(
+            task_id = character(), snippet_id = character(),
+            hit_ref = character(), PATID = character(), EVTID = character(),
+            ELTID = character(), snippet_text = character(),
+            hit_text = character(), RECDATE = as.Date(character()),
+            RECTYPE = character()))
+    sources <- list(
+        biology = biology, documents = pre_retrieved_documents)
+
+    # The unknown document units cannot satisfy a & !b: with no observed hits,
+    # the leading a is FALSE. The enumerable biology roster is sufficient.
+    safe <- run_variable(
+        make_variable("a & !b"), cohort = tibble::tibble(PATID = "P1"),
+        sources = sources)
+    expect_identical(
+        list(
+            value = safe$values$value,
+            qualifying_evtid = safe$audit$combine_keys$EVTID[
+                safe$audit$combine_keys$qualifies]),
+        list(value = 1L, qualifying_evtid = "E1"))
+
+    # With !a & !b, an unseen document EVTID would qualify precisely because it
+    # has no observed hits. The same incomplete roster must remain fatal.
+    expect_error(
+        run_variable(
+            make_variable("!a & !b"),
+            cohort = tibble::tibble(PATID = "P1"), sources = sources),
+        "cannot enumerate source snapshot\\(s\\): documents")
+})
+
 test_that("LLM boundary stays grounded, isolated, and fail closed", {
     new_engine_fields <- c(
         "selection_status", "evidence_kind", "call_status",

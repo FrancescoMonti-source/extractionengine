@@ -133,4 +133,8 @@ migration.
   restricted by each participating activation's declared scope and window,
   instead of over the units that happened to produce evidence. Expressions that
   can qualify a unit with no evidence at all — `!a & !b`, `a | !b` — now answer
-  from an explicit universe.
+  from an explicit universe. An incomplete source snapshot now blocks the
+  combine only when its expression evaluates `TRUE` with every channel set to
+  `FALSE`; otherwise invisible units cannot qualify. Observed hit keys must
+  still belong to the enumerable scoped universe, so this does not bypass a
+  channel's search boundary or window.
