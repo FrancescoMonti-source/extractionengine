@@ -34,7 +34,7 @@
 
 .has_activation_window <- function(variable) {
     any(vapply(variable$channels, function(channel) {
-        inherits(channel$window, "ee_window")
+        !is.null(channel$window)
     }, logical(1)))
 }
 
@@ -1152,13 +1152,13 @@
     scope_keys <- .channel_scope_keys(channel, tasks)
     task_columns <- unique(c(
         "task_id", scope_keys,
-        if (inherits(channel$window, "ee_window")) "anchor_date"))
+        if (!is.null(channel$window)) "anchor_date"))
     scoped_tasks <- dplyr::distinct(tibble::as_tibble(tasks)[task_columns])
     roster_columns <- unique(c(scope_keys, level, "time_start", "time_end"))
     scoped_rows <- dplyr::inner_join(
         scoped_tasks, rows[roster_columns], by = scope_keys,
         relationship = "many-to-many")
-    if (inherits(channel$window, "ee_window")) {
+    if (!is.null(channel$window)) {
         scoped_rows <- scoped_rows[.overlaps_interval(
             scoped_rows$time_start, scoped_rows$time_end,
             .clinical_date(scoped_rows$anchor_date) + channel$window$from_days,
@@ -1842,8 +1842,7 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
     }
 
     combine <- variable$combine
-    gated <- inherits(combine, "ee_combiner") &&
-        identical(combine$kind, "hit_set_expr")
+    gated <- !is.null(combine)
     # A payload activation that the combine does not reference contributes
     # nothing to the gate, so running it for a task the gate excludes is work
     # whose result is discarded -- one model call per excluded task on the LLM

@@ -270,12 +270,13 @@ EE_SOURCES <- list(
 
 # Source-specific boundary adaptation is itself registry data. Adding virology
 # or bacteriology means registering its source contract and, only if necessary,
-# its preparer here; execution never branches on a source name. A preparer is
-# the redsan normalizer itself. The engine adds no `value` alias on top of it:
+# its preparer here; execution never branches on a source name. Resolve the
+# redsan normalizer when the run executes, so the runtime version recorded in
+# the manifest is the implementation called. The engine adds no `value` alias:
 # a variable output reads NUMRES, STRRES, DATEXAM or another prepared column
 # explicitly in from_channel(value =).
 EE_SOURCE_PREPARERS <- list(
-    biology = redsan::process_biol)
+    biology = function(data) redsan::process_biol(data))
 
 # A run-level roster enumerates source units before selectors execute. It keeps
 # source membership because an ELTID complement is scoped to the participating
