@@ -152,6 +152,13 @@ migration.
 
 * `act_channel()` is no longer exported and no longer exists. It had no callers.
 
+* `inspect()` is no longer exported and no longer exists, along with its four
+  methods. On an authored specification it called `resolve_variable_spec()`; on
+  an already resolved one it returned its argument unchanged; on a concept or a
+  channel it built an experimental list view that nothing in the package read.
+  **Migration:** call `resolve_variable_spec()` for the compiled definition and
+  `print()` for the human-readable one.
+
 ## Other changes
 
 * Internal surfaces that only guarded against the package misusing itself are

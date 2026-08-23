@@ -3,7 +3,6 @@
 \alias{variable_spec}
 \alias{use_channel}
 \alias{resolve_variable_spec}
-\alias{inspect}
 \title{Author and compile study variable specifications}
 \usage{
 concept_spec(name, channels)
@@ -34,8 +33,6 @@ use_channel(
 )
 
 resolve_variable_spec(variable)
-
-inspect(x, ...)
 }
 \arguments{
 \item{name}{One non-empty name. For \code{variable_spec()}, this is the canonical
@@ -94,13 +91,10 @@ system prompt.}
 \item{max_candidates}{Optional positive integer limiting Lucene candidates
 supplied to the model.}
 \item{variable}{An authored or compiled variable specification.}
-\item{x}{An object with an \code{inspect()} method.}
-\item{...}{Arguments passed to an S3 inspection method.}
 }
 \value{
 Authoring functions return typed specifications. \code{resolve_variable_spec()}
-and \code{inspect()} return the compiled representation consumed by execution
-and provenance.
+returns the compiled representation consumed by execution and provenance.
 }
 \description{
 These constructors record the researcher's executable operational definition:

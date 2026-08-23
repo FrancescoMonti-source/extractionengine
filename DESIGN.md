@@ -34,7 +34,7 @@ The executable definition has three deliberately separate layers:
    data-masked value expression and its result type.
 
 `resolve_variable_spec()` is the single compiled representation consumed by
-execution, `inspect()`, and provenance. Constructors fail closed: every accepted
+execution and provenance. Constructors fail closed: every accepted
 argument is validated and used. Reuse is ordinary R code returning a
 `variable_spec()`.
 
@@ -322,7 +322,7 @@ the evaluated key-level relation, inside the audit rather than as ordinary
 output tables. Raw executor frames are not returned. The execution manifest has
 a compact print method while retaining its complete machine-readable structure.
 
-The execution manifest and `inspect()` record activation name,
+The execution manifest records activation name,
 `origin_concept`, `origin_channel`, source, and inline/catalog origin,
 original and effective selector, row/group filters, activation window,
 `search_within`, `combine$by`, `filter_by_qualified`, `output$group_by`, selected

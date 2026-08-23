@@ -581,44 +581,10 @@ variable_spec <- function(name, anchor = NULL, channels = list(),
         "ee_variable_spec")
 }
 
-# --- inspection / resolution --------------------------------------------------
-# Read-only helpers for understanding what will execute after each activation's
-# concept defaults and local overrides are combined. They are intentionally
-# lightweight: the return value is an experimental list/S3 view, not a frozen
-# public schema.
-
-inspect <- function(x, ...) {
-    UseMethod("inspect")
-}
-
-inspect.ee_variable_spec <- function(x, ...) {
-    resolve_variable_spec(x)
-}
-
-inspect.ee_concept_spec <- function(x, ...) {
-    .new_spec(
-        list(name = x$name,
-             channels = lapply(x$channels, inspect)),
-        "ee_concept_inspection")
-}
-
-inspect.ee_channel <- function(x, ...) {
-    .new_spec(
-        list(type = x$type,
-             source = x$source,
-             selector = x$selector,
-             required_roles = x$required_roles),
-        "ee_channel_inspection")
-}
-
-inspect.ee_resolved_variable_spec <- function(x, ...) {
-    x
-}
-
-inspect.default <- function(x, ...) {
-    stop("No inspect() method for objects of class: ",
-         paste(class(x), collapse = ", "), call. = FALSE)
-}
+# --- printing / resolution ----------------------------------------------------
+# Read-only helpers for reading and compiling a specification. Printing is for
+# humans; resolve_variable_spec() returns the single compiled representation
+# execution and provenance consume.
 
 .one_line <- function(x) {
     if (rlang::is_quosure(x)) x <- rlang::get_expr(x)
