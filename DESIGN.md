@@ -364,3 +364,34 @@ discordant naming, and always names returned results from `spec$name`.
 The package does not contain study concepts, infer clinical absence from source
 silence, retrieve arbitrary warehouses, define a universal biology schema,
 silently repair cardinality or schema violations, or decide scientific meaning.
+
+Seven capabilities were proposed during review and refused as decisions rather
+than dropped by omission. Each names what would reopen it.
+
+- **`from_channel()` over several aliases** (a sodium/potassium ratio, a mean of
+  means). Refused for now: this is a product boundary, not a defect. It decides
+  whether "Na/K ratio" is one audited variable or two variables plus a script.
+  Reopens when a second real reconciliation case exists.
+- **A deterministic cache shared between variables.** Refused: roughly 2% gained
+  for a disproportionate correctness surface.
+- **`dbplyr` / SQL pushdown.** Refused for now: arbitrary R quosures,
+  `corpustools` retrieval and the LLM steps are not automatically translatable.
+  Reopens when a caller has a real lazy table.
+- **A long-format study table from `run_protocol()`.** Refused: the wide form
+  (one row per unit, one column per variable) stays compatible with everything
+  else; the long form does not, because a single `value` column cannot hold
+  double and character together. The mandatory `ptype` precludes it formally as
+  well.
+- **A nested LLM record inside `values`.** Refused for now: `values` stays flat
+  and directly analysable. Nesting would remove collisions with engine-owned
+  field names but introduce list columns and break the API without a case that
+  asks for it. Reserved names stay validated fail-fast; reopens on a concrete
+  collision.
+- **`on_incomplete = "error"`**, failing the run when a source is missing.
+  Refused, owner decision: it is a governance policy separate from the algebra
+  rather than a second logic, but nothing needs it today. Reopens if a protocol
+  has to be blocked on incomplete coverage.
+- **Serializing functions, closures, or the R environment into the manifest.**
+  Refused: the manifest is not a session replay capsule. This does not cover the
+  simple explicit `.env` parameters that change the calculation, which are
+  recorded.

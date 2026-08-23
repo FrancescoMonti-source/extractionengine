@@ -13,7 +13,11 @@ anyone can re-enter cold by reading `DESIGN.md` and this file.
 - **Source of truth.** `DESIGN.md` = target architecture and vocabulary
   (§16 = deferred capabilities gated on a consumer). `HANDOFF.md`
   (this file) = the review/coordination frame and chronological log.
-- **Current implementation plan.** See [`PLAN.md`](PLAN.md).
+- **Implementation plan.** `PLAN.md` carried the phased plan and was deleted
+  once every phase closed. What it decided now lives where it is read:
+  `DESIGN.md` for the resulting contract and for the capabilities that were
+  refused (§Non-goals), `NEWS.md` for what changed and how to migrate, and
+  the log below for the chronology.
 - **Handoff format** (every exchange): *Goal & acceptance criteria · proposed
   change + reasoning · files changed · open questions/uncertainties.*
 - **No rubber-stamping.** State disagreements explicitly with the tradeoff.
