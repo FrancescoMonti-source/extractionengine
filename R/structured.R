@@ -511,9 +511,6 @@ measure_code_presence <- function(source_table, tasks, codes,
     rows <- tibble::as_tibble(source_table) %>%
         mutate(
             source_row_id = as.character(source_row_id),
-            PATID = as.character(PATID),
-            EVTID = as.character(EVTID),
-            ELTID = as.character(ELTID),
             .ee_t_start = .clinical_date(.data[[start_col]]),
             .ee_t_end = .clinical_date(.data[[end_col]]))
     tkeys <- tasks %>%
@@ -602,10 +599,7 @@ measure_doc_presence <- function(docs_index, tasks, filters,
 
     source_columns <- names(docs_index)
     rows <- tibble::as_tibble(docs_index) %>% mutate(
-        source_row_id = as.character(ELTID),
-        PATID = as.character(PATID),
-        EVTID = as.character(EVTID),
-        ELTID = as.character(ELTID),
+        source_row_id = ELTID,
         .ee_doc_date = .clinical_date(.data[[date_col]]))
     .validate_structured_inputs(
         tasks, rows,

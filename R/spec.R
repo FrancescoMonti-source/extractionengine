@@ -749,7 +749,7 @@ print.ee_variable_spec <- function(x, ...) {
         stop("Cannot validate required_roles for unregistered prepared source '",
              channel$source, "'.", call. = FALSE)
     }
-    available <- names(source_roles(spec))
+    available <- names(spec$roles)
     # Text content lives in the corpus/pre-retrieved candidate payload rather
     # than the typed tCorpus metadata view. It is the one channel-runtime role
     # not bound by the prepared source_spec itself.

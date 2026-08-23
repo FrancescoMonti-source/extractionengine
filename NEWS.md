@@ -146,10 +146,36 @@ migration.
   `edsan_source_specs()` are no longer exported. An author could build a source
   spec successfully and then be told the run required a registered prepared
   EDSAN source; the executor only ever accepted the internal registry.
+  `source_roles()` and `edsan_source_specs()` have since been deleted outright:
+  the first was a class check over a spec this package builds itself, the
+  second had no caller.
 
 * `act_channel()` is no longer exported and no longer exists. It had no callers.
 
 ## Other changes
+
+* Internal surfaces that only guarded against the package misusing itself are
+  gone. `run_extraction()` takes `max_candidates` instead of an arbitrary
+  candidate-selection function, and no longer re-validates what that function
+  returned: the only selection there has ever been is the package's own
+  post-Lucene deduplication, and `use_channel()` already rejects a
+  `max_candidates` below 1. Its unused `sample_n` argument is gone. Retrieval
+  no longer takes `neighbours`/`as_ascii` arguments that no caller varied, and
+  no longer asserts that task-local snippet IDs are unique — they are numbered
+  by `row_number()` inside `group_by(task_id)`. The task-count and
+  task-row-index helpers no longer accept a column-less empty frame: every
+  executor exposes `candidates` and `values` as a task-keyed relation, empty or
+  not. Nothing an author writes changes.
+
+* Identifier coercion happens once, where the guarantee actually breaks.
+  `redsan` returns `PATID`/`EVTID`/`ELTID` as `character` from every
+  normalizer, so the executors no longer re-cast them. A `corpustools`
+  `tCorpus` is the exception: it coerces only the column it owns as `doc_id`,
+  and carries the author's other metadata columns through with whatever type
+  they had — an integer `PATID` stays integer. The document index restores
+  `PATID`/`EVTID` to `character` at that boundary instead. A document source
+  supplied as a prepared frame, or as a `list(corpus, docs_index)` bundle, is
+  taken at its word: it must already be a normalized `redsan` view.
 
 * A declared LLM response schema is now enforced at every depth. Only top-level
   scalar and enum fields were checked; an object or an array of objects fell

@@ -371,37 +371,30 @@ DEFAULT_LLM_SYSTEM_PROMPT <- paste(
     chats
 }
 
-.candidate_selector <- function(max_candidates) {
-    function(rows) {
-        # Retrieval preserves native document/stay occurrences for relational
-        # algebra. The prompt has a different grain: repeated normalized hit
-        # text within one task should consume one candidate slot.
-        prompt_text <- rep(NA_character_, nrow(rows))
-        if ("hit_text" %in% names(rows)) {
-            prompt_text <- as.character(rows$hit_text)
-        }
-        missing_text <- is.na(prompt_text) | !nzchar(str_squish(prompt_text))
-        if (any(missing_text) && "snippet_text" %in% names(rows)) {
-            prompt_text[missing_text] <-
-                as.character(rows$snippet_text[missing_text])
-        }
-        normalized_hit <- tolower(str_squish(prompt_text))
-        missing_text <- is.na(normalized_hit) | !nzchar(normalized_hit)
-        normalized_hit[missing_text] <- paste0(
-            ".ee_unkeyed_snippet::",
-            as.character(rows$snippet_id[missing_text]))
-        selected <- rows[!duplicated(normalized_hit), , drop = FALSE]
-        if (is.null(max_candidates)) selected else
-            utils::head(selected, max_candidates)
+# Retrieval preserves native document/stay occurrences for relational algebra.
+# The prompt has a different grain: repeated normalized hit text within one task
+# should consume one candidate slot.
+.model_candidates <- function(rows, max_candidates) {
+    prompt_text <- rep(NA_character_, nrow(rows))
+    if ("hit_text" %in% names(rows)) {
+        prompt_text <- as.character(rows$hit_text)
     }
+    missing_text <- is.na(prompt_text) | !nzchar(str_squish(prompt_text))
+    if (any(missing_text) && "snippet_text" %in% names(rows)) {
+        prompt_text[missing_text] <-
+            as.character(rows$snippet_text[missing_text])
+    }
+    normalized_hit <- tolower(str_squish(prompt_text))
+    missing_text <- is.na(normalized_hit) | !nzchar(normalized_hit)
+    normalized_hit[missing_text] <- paste0(
+        ".ee_unkeyed_snippet::",
+        as.character(rows$snippet_id[missing_text]))
+    selected <- rows[!duplicated(normalized_hit), , drop = FALSE]
+    if (is.null(max_candidates)) selected else
+        utils::head(selected, max_candidates)
 }
 
 .chat_metadata <- function(chat) {
-    if (is.null(chat)) {
-        return(list(provider = NA_character_, model = NA_character_, params = list(),
-                    temperature = NA_real_, seed = NA_integer_,
-                    max_tokens = NA_real_))
-    }
     if (!inherits(chat, "Chat") || !is.function(chat$chat_structured) ||
         !is.function(chat$clone) || !is.function(chat$get_provider)) {
         stop("chat must be an ellmer Chat object.", call. = FALSE)
@@ -489,29 +482,6 @@ DEFAULT_LLM_SYSTEM_PROMPT <- paste(
     out
 }
 
-.select_task_candidates <- function(selector, rows, task_id) {
-    selected <- selector(rows)
-    if (!is.data.frame(selected) || !all(c("task_id", "snippet_id") %in% names(selected))) {
-        stop("Post-Lucene candidate selection must return candidate rows.",
-             call. = FALSE)
-    }
-    if (!nrow(selected)) {
-        stop("Post-Lucene candidate selection kept no row for the current task.",
-             call. = FALSE)
-    }
-    ids <- as.character(selected$snippet_id)
-    if (anyNA(ids) || anyDuplicated(ids)) {
-        stop("Post-Lucene candidate selection returned missing or duplicate snippet ids.",
-             call. = FALSE)
-    }
-    index <- match(ids, as.character(rows$snippet_id))
-    if (anyNA(index) || any(as.character(selected$task_id) != task_id)) {
-        stop("Post-Lucene candidate selection may only select/reorder supplied rows.",
-             call. = FALSE)
-    }
-    rows[index, , drop = FALSE]
-}
-
 # Materialize response-level evidence once; asserts every cited ID resolves to
 # exactly one snippet (caught per-task, so a failure never aborts the batch).
 .materialize_task_evidence <- function(snippet_ids, task_snippets) {
@@ -559,16 +529,11 @@ DEFAULT_LLM_SYSTEM_PROMPT <- paste(
 # declared task order. Why a task has none -- no document universe, or none that
 # matched -- is a lineage count upstream, not a state this executor is told.
 run_extraction <- function(tasks, candidates, definition, chat,
-                           candidate_selector, query = NA_character_,
-                           sample_n = 0L) {
+                           max_candidates = NULL, query = NA_character_) {
     .check_llm_definition(definition)
-    if (!is.function(candidate_selector)) {
-        stop("candidate_selector must be a function.", call. = FALSE)
-    }
     metadata <- .chat_metadata(chat)
     task_ids <- intersect(
         as.character(tasks$task_id), unique(as.character(candidates$task_id)))
-    if (sample_n > 0L) task_ids <- utils::head(task_ids, sample_n)
 
     query_hash <- substr(rlang::hash(query), 1L, 12L)   # audit: retrieval-query fingerprint
     values_l <- list(); evidence_l <- list(); attempts_l <- list()
@@ -576,7 +541,7 @@ run_extraction <- function(tasks, candidates, definition, chat,
 
     for (tid in task_ids) {
         ts <- candidates[candidates$task_id == tid, , drop = FALSE]
-        ts <- .select_task_candidates(candidate_selector, ts, tid)
+        ts <- .model_candidates(ts, max_candidates)
         ts$model_candidate_rank <- seq_len(nrow(ts))
         selected_l[[length(selected_l) + 1L]] <- ts
         task_row <- tasks[as.character(tasks$task_id) == tid, , drop = FALSE]

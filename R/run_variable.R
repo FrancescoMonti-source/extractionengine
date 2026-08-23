@@ -28,10 +28,6 @@
     .channel_def(variable, channel_name)$source
 }
 
-.channel_type <- function(channel_name, variable) {
-    .channel_def(variable, channel_name)$type
-}
-
 .window_days <- function(window) {
     if (is.null(window) || !inherits(window, "ee_window")) {
         stop("This experimental runner requires a relative window.", call. = FALSE)
@@ -61,9 +57,6 @@
 }
 
 .count_task_rows <- function(rows, task_ids) {
-    if (!is.data.frame(rows) || !nrow(rows) || !"task_id" %in% names(rows)) {
-        return(integer(length(task_ids)))
-    }
     index <- match(as.character(rows$task_id), as.character(task_ids))
     tabulate(index[!is.na(index)], nbins = length(task_ids))
 }
@@ -380,7 +373,7 @@
 .code_source_binding <- function(source) {
     spec <- EE_SOURCES[[source]]
     if (is.null(spec)) stop("Unknown prepared EDSAN source: ", source, call. = FALSE)
-    code_col <- source_roles(spec)$code
+    code_col <- spec$roles$code
     if (is.null(code_col)) {
         stop("Prepared source '", source, "' has no code role.", call. = FALSE)
     }
@@ -397,7 +390,7 @@
 .lab_source_binding <- function(source) {
     spec <- EE_SOURCES[[source]]
     if (is.null(spec)) stop("Unknown prepared EDSAN source: ", source, call. = FALSE)
-    roles <- source_roles(spec)
+    roles <- spec$roles
     required <- c("point_date", "analyte")
     missing <- setdiff(required, names(roles))
     if (length(missing)) {
@@ -489,7 +482,7 @@
              anchor$source, "'.", call. = FALSE)
     }
     validate_source_view(src, spec)
-    roles <- source_roles(spec)
+    roles <- spec$roles
     code_col <- roles$code %||% NULL
     if (is.null(code_col)) {
         stop("index_event: source '", anchor$source, "' lacks a 'code' role.",
@@ -762,7 +755,7 @@
                 result <- run_extraction(
                     tasks, text_inputs$candidates,
                     definition, chat,
-                    .candidate_selector(channel_def$max_candidates),
+                    channel_def$max_candidates,
                     query = selector$query)
             } else {
                 stop("Unsupported text method for channel '", channel_name,
@@ -865,19 +858,6 @@
 # expression sees those complete, row-aligned rows in a tidy data mask. LLM
 # activations instead expose their authored TypeObject fields as one wide row per
 # task.
-.candidate_rows <- function(result, channel_name) {
-    rows <- result$candidates
-    if (!is.data.frame(rows)) {
-        rows <- result$evidence
-    }
-    if (!is.data.frame(rows) || !"task_id" %in% names(rows)) {
-        stop("Channel '", channel_name,
-             "' did not expose task-keyed candidate rows for from_channel().",
-             call. = FALSE)
-    }
-    rows
-}
-
 .typed_na <- function(prototype) {
     if (is.list(prototype) && !inherits(prototype, "POSIXlt")) return(list(NULL))
     prototype[NA_integer_]
@@ -888,9 +868,8 @@
     tibble::as_tibble(columns)
 }
 
-.deterministic_payload <- function(result, channel_name) {
-    rows <- .candidate_rows(result, channel_name)
-    payload <- tibble::as_tibble(rows)
+.deterministic_payload <- function(result) {
+    payload <- tibble::as_tibble(result$candidates)
     payload$task_id <- as.character(payload$task_id)
     payload
 }
@@ -981,7 +960,7 @@
 
 .single_from_channel_variable <- function(variable, tasks, channel_name, result) {
     output <- variable$output
-    payload <- .deterministic_payload(result, channel_name)
+    payload <- .deterministic_payload(result)
     .validate_data_mask_expression(
         output$value, setdiff(names(payload), "task_id"),
         channel_name, "from_channel() value")
@@ -1069,7 +1048,7 @@
     output <- variable$output
     channel_name <- output$channel
     result <- channel_results[[channel_name]]
-    payload <- .deterministic_payload(result, channel_name)
+    payload <- .deterministic_payload(result)
     .validate_data_mask_expression(
         output$value, setdiff(names(payload), "task_id"),
         channel_name, "from_channel() value")
@@ -1131,8 +1110,7 @@
     authored <- names(prototype)
     states <- .llm_call_states(result, task_ids)
     value_index <- .task_row_index(
-        result$values, task_ids, character(), "Channel values",
-        allow_columnless_empty = TRUE)
+        result$values, task_ids, character(), "Channel values")
     value_rows <- lapply(seq_along(task_ids), function(i) {
         task_id <- task_ids[[i]]
         state <- states[[i]]
@@ -1663,7 +1641,7 @@
         spec <- EE_SOURCES[[name]]
         c(list(
             roles = if (is.null(spec) || !name %in% source) NULL else {
-                source_roles(spec)
+                spec$roles
             },
             runtime_roles = if (any(type[source == name] == "text")) {
                 list(text = "snippet_text", evidence_ref = "hit_ref")

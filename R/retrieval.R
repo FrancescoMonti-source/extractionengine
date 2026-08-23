@@ -11,6 +11,10 @@
 # lineage upstream. Knows nothing clinical.
 # =============================================================================
 
+# Sentences of context kept on each side of the hit. Retrieval runs one
+# configuration; this is it.
+.SNIPPET_NEIGHBOURS <- 1L
+
 # Deterministic normalized untokenizer (single tested punctuation policy).
 untokenize <- function(tokens) {
     s <- paste(tokens, collapse = " ")
@@ -21,9 +25,10 @@ untokenize <- function(tokens) {
     trimws(gsub("\\s+", " ", s))
 }
 
-.reconstruct_sentences <- function(scoped_tc, hit_locations, neighbours) {
+.reconstruct_sentences <- function(scoped_tc, hit_locations) {
     targets <- hit_locations %>%
-        tidyr::crossing(offset = seq.int(-neighbours, neighbours)) %>%
+        tidyr::crossing(offset = seq.int(-.SNIPPET_NEIGHBOURS,
+                                         .SNIPPET_NEIGHBOURS)) %>%
         transmute(ELTID, sentence = sentence + offset) %>%
         filter(sentence >= 1L) %>% distinct()
     tok <- scoped_tc$tokens %>% as.data.frame()
@@ -47,7 +52,7 @@ untokenize <- function(tokens) {
         summarise(text = paste(text, collapse = " "), .groups = "drop")
 }
 
-.assemble_snippets <- function(scoped_tc, hits, neighbours) {
+.assemble_snippets <- function(scoped_tc, hits) {
     empty <- tibble::tibble(ELTID = character(), sentence = integer(),
         hit_ref = character(), hit_text = character(),
         context_before = character(), context_after = character(),
@@ -56,9 +61,9 @@ untokenize <- function(tokens) {
     hit_loc <- hits %>%
         transmute(ELTID = as.character(doc_id), sentence = as.integer(sentence)) %>%
         distinct()
-    sent <- .reconstruct_sentences(scoped_tc, hit_loc, neighbours)
-    before <- .band_text(hit_loc, sent, -neighbours, -1L) %>% rename(context_before = text)
-    after  <- .band_text(hit_loc, sent,  1L, neighbours) %>% rename(context_after = text)
+    sent <- .reconstruct_sentences(scoped_tc, hit_loc)
+    before <- .band_text(hit_loc, sent, -.SNIPPET_NEIGHBOURS, -1L) %>% rename(context_before = text)
+    after  <- .band_text(hit_loc, sent,  1L, .SNIPPET_NEIGHBOURS) %>% rename(context_after = text)
     hit_loc %>%
         left_join(rename(sent, hit_text = text), by = c("ELTID", "sentence")) %>%
         left_join(before, by = c("ELTID", "sentence")) %>%
@@ -101,8 +106,7 @@ untokenize <- function(tokens) {
         arrange(task_id, abs(days_from_anchor), RECDATE, ELTID, sentence)
 }
 
-retrieve <- function(corpus, tasks, eligibility, query,
-                     neighbours = 1L, as_ascii = TRUE) {
+retrieve <- function(corpus, tasks, eligibility, query) {
     stopifnot(all(c("task_id", "ELTID") %in% names(eligibility)))
     if (anyDuplicated(tasks$task_id)) stop("tasks$task_id must be unique.", call. = FALSE)
     unknown <- setdiff(unique(eligibility$task_id), tasks$task_id)
@@ -115,11 +119,11 @@ retrieve <- function(corpus, tasks, eligibility, query,
     if (length(eligible_ids)) {
         sub <- corpus$subset(subset_meta = doc_id %in% eligible_ids, copy = TRUE)
         hits <- as.data.frame(search_contexts(
-            sub, query, context_level = "sentence", as_ascii = as_ascii)$hits)
-        snippets <- .assemble_snippets(sub, hits, neighbours)
+            sub, query, context_level = "sentence", as_ascii = TRUE)$hits)
+        snippets <- .assemble_snippets(sub, hits)
         rm(sub)
     } else {
-        snippets <- .assemble_snippets(NULL, data.frame(), neighbours)
+        snippets <- .assemble_snippets(NULL, data.frame())
     }
 
     candidates <- elig %>%
@@ -151,10 +155,6 @@ retrieve <- function(corpus, tasks, eligibility, query,
                         "anchor_date", "days_from_anchor",
                         "n_duplicate_occurrences", "duplicate_hit_refs",
                         "duplicate_recdates")))
-
-    if (nrow(candidates) && anyDuplicated(candidates[c("task_id", "snippet_id")])) {
-        stop("Task-local snippet IDs must be unique.", call. = FALSE)
-    }
 
     # Retrieval returns what it retrieved. How many documents a task could have
     # searched, and whether any snippet survived, are counts over the searchable

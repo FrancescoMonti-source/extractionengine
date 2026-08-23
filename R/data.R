@@ -83,13 +83,6 @@ source_spec <- function(name, module, table, roles,
         class = c("ee_source_spec", "list"))
 }
 
-source_roles <- function(spec) {
-    if (!inherits(spec, "ee_source_spec")) {
-        stop("source_roles() requires a source_spec().", call. = FALSE)
-    }
-    spec$roles
-}
-
 # Validate a compatible prepared view without changing it. redsan owns typing;
 # this boundary only fails closed when a role-bound column is absent or untyped.
 validate_source_view <- function(data, spec) {
@@ -228,6 +221,12 @@ DOCS_SOURCE <- source_spec(
     }
     names(meta)[names(meta) == "doc_id"] <- "ELTID"
     validate_source_view(meta, DOCS_SOURCE)
+    # corpustools coerces only the doc column it owns; every other metadata
+    # column arrives exactly as the author built the tCorpus. This is the one
+    # place the redsan character-identifier guarantee has to be restored, so
+    # that no executor downstream re-casts the identity spine.
+    meta$PATID <- as.character(meta$PATID)
+    meta$EVTID <- as.character(meta$EVTID)
     meta
 }
 
@@ -341,7 +340,7 @@ EE_SOURCE_PREPARERS <- list(
              call. = FALSE)
     }
 
-    roles <- source_roles(spec)
+    roles <- spec$roles
     start_column <- roles$point_date %||% roles$event_start
     end_column <- roles$point_date %||% roles$event_end %||% start_column
     if (is.null(start_column) ||
@@ -353,9 +352,9 @@ EE_SOURCE_PREPARERS <- list(
 
     rows <- tibble::tibble(
         source = source,
-        PATID = as.character(frame$PATID),
-        EVTID = as.character(frame$EVTID),
-        ELTID = as.character(frame$ELTID),
+        PATID = frame$PATID,
+        EVTID = frame$EVTID,
+        ELTID = frame$ELTID,
         time_start = .clinical_date(frame[[start_column]]),
         time_end = .clinical_date(frame[[end_column]]))
     if (length(cohort_patids)) {
@@ -470,8 +469,4 @@ EE_SOURCE_PREPARERS <- list(
             },
             enumerated = enumerated)
     }))
-}
-
-edsan_source_specs <- function() {
-    EE_SOURCES
 }

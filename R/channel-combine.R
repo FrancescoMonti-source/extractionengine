@@ -22,13 +22,9 @@
 # Return the position of each declared task in a task-keyed executor view. The
 # assemblers have always assumed at most one value row per task; make that
 # invariant executable instead of silently taking the first match.
-.task_row_index <- function(frame, task_ids, required, frame_name,
-                            allow_columnless_empty = FALSE) {
+.task_row_index <- function(frame, task_ids, required, frame_name) {
     if (!is.data.frame(frame)) {
         stop(frame_name, " must be a data frame.", call. = FALSE)
-    }
-    if (!nrow(frame) && allow_columnless_empty) {
-        return(rep.int(NA_integer_, length(task_ids)))
     }
     missing <- setdiff(c("task_id", required), names(frame))
     if (length(missing)) {
