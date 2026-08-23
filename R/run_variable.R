@@ -29,9 +29,6 @@
 }
 
 .window_days <- function(window) {
-    if (is.null(window) || !inherits(window, "ee_window")) {
-        stop("This experimental runner requires a relative window.", call. = FALSE)
-    }
     c(from_days = window$from_days, to_days = window$to_days)
 }
 
@@ -61,24 +58,10 @@
     tabulate(index[!is.na(index)], nbins = length(task_ids))
 }
 
-.spine_keys_through <- function(level) {
-    index <- match(level, .identity_spine)
-    if (is.na(index)) {
-        stop("Unknown identity-spine key: ", level, ".", call. = FALSE)
-    }
-    .identity_spine[seq_len(index)]
-}
-
+# The output grain and the combine level are always identity-spine keys: the
+# output constructors and combine_channels() accept nothing else.
 .output_grain_keys <- function(level) {
-    if (level %in% .identity_spine) .spine_keys_through(level)
-    else unique(c("PATID", level))
-}
-
-.selector_codes <- function(selector, field) {
-    if (!inherits(selector, "ee_selector")) {
-        stop("Channel selector is not an experimental selector.", call. = FALSE)
-    }
-    selector[[field]]
+    .identity_spine[seq_len(match(level, .identity_spine))]
 }
 
 .validate_pre_retrieved_text <- function(coverage, candidates, tasks,
@@ -306,10 +289,6 @@
     lineage_inputs <- list(
         pre_selector = .lineage_input_rows(eligibility, "document"))
     if (!is.null(channel_def$window)) {
-        if (!inherits(channel_def$window, "ee_window")) {
-            stop("Real retrieval requires a compiled relative window.",
-                 call. = FALSE)
-        }
         w <- .window_days(channel_def$window)
         eligibility <- eligibility %>%
             filter(RECDATE >= anchor_date + w[["from_days"]],
@@ -370,11 +349,7 @@
 # for both ends.
 .code_source_binding <- function(source) {
     spec <- EE_SOURCES[[source]]
-    if (is.null(spec)) stop("Unknown prepared EDSAN source: ", source, call. = FALSE)
     code_col <- spec$roles$code
-    if (is.null(code_col)) {
-        stop("Prepared source '", source, "' has no code role.", call. = FALSE)
-    }
     if (identical(spec$source_time_kind, "point")) {
         d <- spec$source_time_start
         list(code_col = code_col, start_col = d, end_col = d)
@@ -386,15 +361,7 @@
 }
 
 .lab_source_binding <- function(source) {
-    spec <- EE_SOURCES[[source]]
-    if (is.null(spec)) stop("Unknown prepared EDSAN source: ", source, call. = FALSE)
-    roles <- spec$roles
-    required <- c("point_date", "analyte")
-    missing <- setdiff(required, names(roles))
-    if (length(missing)) {
-        stop("Prepared source '", source, "' lacks lab role(s): ",
-             paste(missing, collapse = ", "), ".", call. = FALSE)
-    }
+    roles <- EE_SOURCES[[source]]$roles
     list(
         date_col = roles$point_date,
         analyte_col = roles$analyte)
@@ -452,10 +419,6 @@
     if (!.has_activation_window(variable) &&
         !inherits(variable$anchor, "ee_index_event")) return(tasks)
     anchor <- variable$anchor
-    if (is.null(anchor)) {
-        stop("An activation window cannot execute without a declared anchor.",
-             call. = FALSE)
-    }
     if (is.character(anchor)) {
         if (!anchor %in% names(tasks)) {
             stop("The declared anchor cohort column is missing: '", anchor, "'.",
@@ -475,24 +438,12 @@
              call. = FALSE)
     }
     spec <- EE_SOURCES[[anchor$source]]
-    if (is.null(spec)) {
-        stop("index_event requires a registered prepared EDSAN source; got '",
-             anchor$source, "'.", call. = FALSE)
-    }
     validate_source_view(src, spec)
     roles <- spec$roles
-    code_col <- roles$code %||% NULL
-    if (is.null(code_col)) {
-        stop("index_event: source '", anchor$source, "' lacks a 'code' role.",
-             call. = FALSE)
-    }
+    code_col <- roles$code
     # `at` names the source's own date COLUMN (owner ruling 2026-07-07: raw names,
     # not role vocabulary); omitted, it defaults to the source's windowing clock.
     date_col <- anchor$at %||% spec$source_time_start
-    if (is.null(date_col)) {
-        stop("index_event: source '", anchor$source,
-             "' has no registered source clock.", call. = FALSE)
-    }
     if (!date_col %in% names(src)) {
         hint <- if (date_col %in% c("point_date", "event_start", "event_end")) {
             " (date ROLES were retired from `at`: name the source's own column, e.g. DATEACTE/DATENT/DATSORT)"
@@ -623,9 +574,7 @@
         }
         return(required)
     }
-    if (identical(channel_def$search_within, "PATID")) return("PATID")
-    stop("Channel '", channel_def$name,
-         "' lacks a valid search_within declaration.", call. = FALSE)
+    "PATID"
 }
 
 # Dispatch by channel TYPE. Each branch wraps an existing tested executor.
@@ -647,11 +596,6 @@
              "' (source: ", source, ").", call. = FALSE)
     }
     spec <- EE_SOURCES[[source]]
-    if (is.null(spec)) {
-        stop("Channel '", channel_name,
-             "' requires a registered prepared EDSAN source; got '", source,
-             "'.", call. = FALSE)
-    }
     if (channel_def$type %in% c("code", "lab")) {
         validate_source_view(sources[[source]], spec)
     }
@@ -688,7 +632,7 @@
             bind <- .lab_source_binding(source)
             measure_analyte_values(
                 sources[[source]], tasks,
-                analytes = .selector_codes(selector, "codes"),
+                analytes = selector$codes,
                 filter_rows = channel_def$filter_rows, grain_keys = grain_keys,
                 from_days = w[["from_days"]], to_days = w[["to_days"]],
                 group_by = channel_def$group_by,
@@ -701,10 +645,6 @@
             # Metadata-selected document existence (no content, no LLM): the doc
             # branch reads document metadata only; a tCorpus contributes its
             # metadata view and a bare frame is already an index.
-            if (!identical(selector$kind, "doc_meta")) {
-                stop("Doc channel '", channel_name, "' needs a doc_meta() ",
-                     "selector.", call. = FALSE)
-            }
             src <- sources[[source]]
             docs_index <- .document_index(src)
             validate_source_view(docs_index, spec)
@@ -755,18 +695,13 @@
                     definition, chat,
                     channel_def$max_candidates,
                     query = selector$query)
-            } else {
-                stop("Unsupported text method for channel '", channel_name,
-                          "': ", method, ".", call. = FALSE)
             }
             result$audit_counts <- text_inputs$audit_counts
             result$lineage_inputs <- text_inputs$lineage_inputs
             result$declared_eligibility <- text_inputs$declared_eligibility
             if (!is.null(key)) rlang::env_poke(cache, key, result)
             result
-        },
-        stop("No experimental executor for channel type: ", channel_def$type,
-             call. = FALSE))
+        })
 }
 
 # Public channel status separates two stages instead of publishing several
@@ -992,27 +927,10 @@
     output_group <- output$group_by
     combine_rank <- match(combine_level, .identity_spine)
     output_rank <- match(output_group, .identity_spine)
-    if (is.na(combine_rank) || is.na(output_rank)) {
-        stop("combine by and output group_by must name identity-spine keys.",
-             call. = FALSE)
-    }
-    if (combine_rank <= output_rank) {
-        if (!is.null(filter_by)) {
-            stop("from_channel() filter_by_qualified must be NULL unless combine ",
-                 "by is finer than output group_by.", call. = FALSE)
-        }
-        return(payload)
-    }
-    if (is.null(filter_by)) {
-        stop("from_channel() must declare filter_by_qualified when combine by ('",
-             combine_level, "') is finer than output group_by ('", output_group,
-             "').", call. = FALSE)
-    }
-    if (!filter_by %in% c(combine_level, output_group)) {
-        stop("from_channel() filter_by_qualified must equal combine by ('",
-             combine_level, "') or output group_by ('", output_group, "').",
-             call. = FALSE)
-    }
+    # from_channel() already settled the contract: filter_by_qualified is
+    # declared if and only if combine$by is finer than output$group_by, and
+    # names one of those two levels.
+    if (combine_rank <= output_rank) return(payload)
     qualified <- out$combine_keys[out$combine_keys$qualifies, , drop = FALSE]
     if (identical(filter_by, output_group)) {
         if (!"task_id" %in% names(qualified)) {
@@ -1095,15 +1013,7 @@
 .single_llm_from_channel_variable <- function(variable, tasks, channel_name,
                                               result) {
     output <- variable$output
-    if (!is.null(output$value)) {
-        stop("LLM from_channel() output must omit value and publish its complete ",
-             "structured record.", call. = FALSE)
-    }
     prototype <- result$value_prototype
-    if (!is.data.frame(prototype)) {
-        stop("LLM activation '", channel_name,
-             "' did not expose its authored response prototype.", call. = FALSE)
-    }
     task_ids <- as.character(tasks$task_id)
     authored <- names(prototype)
     states <- .llm_call_states(result, task_ids)
@@ -1284,11 +1194,6 @@
     combine <- variable$combine
     declared <- names(channel_results)
     referenced <- combine$channels
-    missing_ch <- setdiff(referenced, declared)
-    if (length(missing_ch)) {
-        stop("hit-set expression references unactivated channel(s): ",
-             paste(missing_ch, collapse = ", "), call. = FALSE)
-    }
     task_ids <- as.character(tasks$task_id)
 
     reduced <- lapply(declared, function(ch) {
@@ -1308,10 +1213,6 @@
     output_group <- variable$output$group_by
     combine_rank <- match(combine_level, .identity_spine)
     output_rank <- match(output_group, .identity_spine)
-    if (is.na(combine_rank) || is.na(output_rank)) {
-        stop("combine by and output group_by must name identity-spine keys.",
-             call. = FALSE)
-    }
 
     if (combine_rank > output_rank) {
         # Fine -> coarse: evaluate over the source roster restricted by every
@@ -1392,10 +1293,6 @@
     # and audit read the same way whether or not it was deferred.
     if (!is.null(run_deferred)) {
         pending <- setdiff(names(variable$channels), declared)
-        if (length(pending) != 1L) {
-            stop("Exactly one activation can be deferred behind the gate; ",
-                 "found ", length(pending), ".", call. = FALSE)
-        }
         channel_results[[pending]] <- run_deferred(task_ids[result %in% TRUE])
         declared <- names(variable$channels)
         reduced[[pending]] <- .deterministic_hits_for_tasks(
@@ -1910,9 +1807,6 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
         stop("run_variable() requires a variable_spec().", call. = FALSE)
     }
     variable <- resolve_variable_spec(variable)
-    if (!length(variable$channels)) {
-        stop("variable_spec has no selected channels.", call. = FALSE)
-    }
     # Photograph the simple external parameters once, before any activation
     # runs, and rebind the authored expressions to read the photograph. The
     # calculation and the manifest then quote the same values by construction.
@@ -1991,7 +1885,7 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
                 .apply_gated_from_channel(variable, out, channel_results)
             }
         }
-    } else if (is.null(combine)) {
+    } else {
         # Single channel: publish membership or the activation payload.
         ch <- names(channel_results)[[1]]
         output_kind <- variable$output$kind
@@ -2006,13 +1900,7 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
                     .single_from_channel_variable(
                         variable, tasks, ch, channel_results[[1]])
                 }
-            },
-            stop("Unsupported single-channel output: ", output_kind,
-                 " (expected binary/from_channel).",
-                 call. = FALSE))
-    } else {
-        stop("Unsupported combine; expected a hit-set expression (>=2 channels) ",
-             "or NULL (single channel).", call. = FALSE)
+            })
     }
     counts <- .build_audit_counts(variable, channel_results, out, tasks)
     llm_calls <- .build_audit_llm_calls(channel_results)

@@ -707,12 +707,20 @@ print.ee_variable_spec <- function(x, ...) {
     invisible(x)
 }
 
-.check_channel_required_roles <- function(channel) {
-    required <- channel$required_roles
-    if (!length(required)) return(invisible(TRUE))
+# Every activation names a registered prepared EDSAN source, and its channel
+# type needs particular roles of that source: a code channel needs the code
+# column, a lab channel the analyte and its clock. Author-declared
+# required_roles are checked in the same pass. This is the run's only
+# source-contract check -- the executors read spec$roles directly.
+.CHANNEL_TYPE_ROLES <- list(
+    code = "code",
+    lab = c("point_date", "analyte"))
+
+.check_channel_source_contract <- function(channel) {
     spec <- EE_SOURCES[[channel$source]]
     if (is.null(spec)) {
-        stop("Cannot validate required_roles for unregistered prepared source '",
+        stop("Channel '", channel$name,
+             "' requires a registered prepared EDSAN source; got '",
              channel$source, "'.", call. = FALSE)
     }
     available <- names(spec$roles)
@@ -720,11 +728,12 @@ print.ee_variable_spec <- function(x, ...) {
     # than the typed tCorpus metadata view. It is the one channel-runtime role
     # not bound by the prepared source_spec itself.
     if (identical(channel$type, "text")) available <- c(available, "text")
+    required <- c(.CHANNEL_TYPE_ROLES[[channel$type]], channel$required_roles)
     missing <- setdiff(required, available)
     if (length(missing)) {
-        stop("Channel '", channel$name, "' requires source role(s) not bound by '",
-             channel$source, "': ", paste(missing, collapse = ", "), ".",
-             call. = FALSE)
+        stop("Channel '", channel$name, "' requires source role(s) not bound ",
+             "by '", channel$source, "': ", paste(missing, collapse = ", "),
+             ".", call. = FALSE)
     }
     invisible(TRUE)
 }
@@ -776,7 +785,7 @@ resolve_variable_spec <- function(variable) {
         function(name) .resolve_channel_activation(
             name, variable$channels[[name]]))
     names(resolved_channels) <- names(variable$channels)
-    invisible(lapply(resolved_channels, .check_channel_required_roles))
+    invisible(lapply(resolved_channels, .check_channel_source_contract))
     .check_eltid_identity_domain(
         variable$combine, resolved_channels, variable$output)
 

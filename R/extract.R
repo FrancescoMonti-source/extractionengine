@@ -10,27 +10,6 @@
 # ordinary variable specs never write type builders, prompt builders, or parsers.
 .llm_definition <- function(name, system_prompt, response, type_builder,
                             prompt_builder, parser, value_prototype) {
-    if (!is.character(name) || length(name) != 1L || !nzchar(name) ||
-        !is.character(system_prompt) || length(system_prompt) != 1L ||
-        !nzchar(system_prompt)) {
-        stop("Internal LLM definitions require non-empty name and system_prompt.",
-             call. = FALSE)
-    }
-    for (value in list(type_builder = type_builder,
-                       prompt_builder = prompt_builder, parser = parser)) {
-        if (!is.function(value)) {
-            stop("type_builder, prompt_builder, and parser must be functions.",
-                 call. = FALSE)
-        }
-    }
-    if (!inherits(response, "ellmer::TypeObject")) {
-        stop("Internal LLM definitions require an ellmer TypeObject response.",
-             call. = FALSE)
-    }
-    if (!is.data.frame(value_prototype) || nrow(value_prototype) != 0L) {
-        stop("Internal LLM value_prototype must be a zero-row data frame.",
-             call. = FALSE)
-    }
     structure(
         list(name = name, system_prompt = system_prompt,
              response = response, value_prototype = value_prototype,
@@ -40,10 +19,6 @@
 }
 
 .llm_type_object_parts <- function(response) {
-    if (!inherits(response, "ellmer::TypeObject")) {
-        stop("use_channel() response must be an ellmer::TypeObject.",
-             call. = FALSE)
-    }
     parts <- S7::props(response)
     properties <- parts$properties
     property_names <- names(properties)
@@ -52,11 +27,6 @@
         anyDuplicated(property_names)) {
         stop("The response TypeObject must have uniquely named properties.",
              call. = FALSE)
-    }
-    collisions <- intersect(property_names, .LLM_RESERVED_RESPONSE_FIELDS)
-    if (length(collisions)) {
-        stop("The response TypeObject uses engine-reserved field name(s): ",
-             paste(collisions, collapse = ", "), ".", call. = FALSE)
     }
     list(
         description = parts$description,
@@ -235,36 +205,14 @@ DEFAULT_LLM_SYSTEM_PROMPT <- paste(
 # the public value contract; rationale and evidence IDs are engine-owned fields
 # added to a fresh schema for each task.
 .compile_llm_channel <- function(channel, variable) {
-    if (!identical(channel$method, "lucene_llm")) {
-        stop("Internal LLM compilation requires method = 'lucene_llm'.",
-             call. = FALSE)
-    }
     response <- channel$response
     response_parts <- .llm_type_object_parts(response)
     authored_properties <- response_parts$properties
     authored_fields <- names(authored_properties)
     channel_name <- channel$name
-    if (!is.character(channel_name) || length(channel_name) != 1L ||
-        is.na(channel_name) || !nzchar(channel_name)) {
-        stop("A resolved LLM channel must have one non-empty alias.",
-             call. = FALSE)
-    }
     user_prompt <- channel$user_prompt
-    if (!is.null(user_prompt) &&
-        (!is.character(user_prompt) || length(user_prompt) != 1L ||
-         is.na(user_prompt) || !nzchar(trimws(user_prompt)))) {
-        stop("use_channel() user_prompt must be one non-empty string or NULL.",
-             call. = FALSE)
-    }
     system_prompt <- channel$system_prompt %||% DEFAULT_LLM_SYSTEM_PROMPT
     rationale_description <- channel$rationale
-    if (!is.null(rationale_description) &&
-        (!is.character(rationale_description) ||
-         length(rationale_description) != 1L || is.na(rationale_description) ||
-         !nzchar(trimws(rationale_description)))) {
-        stop("A resolved LLM channel rationale must be a description string or NULL.",
-             call. = FALSE)
-    }
     value_prototype <- .llm_value_prototype(
         authored_properties, rationale_description)
 
@@ -525,7 +473,6 @@ DEFAULT_LLM_SYSTEM_PROMPT <- paste(
 # matched -- is a lineage count upstream, not a state this executor is told.
 run_extraction <- function(tasks, candidates, definition, chat,
                            max_candidates = NULL, query = NA_character_) {
-    .check_llm_definition(definition)
     metadata <- .chat_metadata(chat)
     task_ids <- intersect(
         as.character(tasks$task_id), unique(as.character(candidates$task_id)))

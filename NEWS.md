@@ -165,6 +165,31 @@ migration.
 
 ## Other changes
 
+* The runner executes the resolved specification instead of re-deciding it.
+  `variable_spec()`, `use_channel()`, the channel and output constructors and
+  `resolve_variable_spec()` already own every decision about type, method,
+  selector, window, combine, output, alias and LLM response, and each one fails
+  closed. The executors nevertheless re-derived those same facts and carried a
+  branch for each impossible answer: an unknown channel type, an unsupported
+  text method, a doc channel without a `doc_meta()` selector, a combine or
+  `group_by` outside the identity spine, `filter_by_qualified` violating a rule
+  `from_channel()` had already enforced, a combine referencing an unactivated
+  alias, an empty channel list, an internally built LLM definition or response
+  prototype. Those branches are gone.
+
+  `resolve_variable_spec()` gains the check that needs the registry: every
+  activation must name a registered prepared EDSAN source that binds the roles
+  its channel type reads -- `code` for a code channel, `point_date` and
+  `analyte` for a lab channel -- and `index_event()` validates its own source
+  the same way. A lab activation pointed at `pmsi_diag` used to compile and
+  fail once the run reached that channel; it now fails when the specification is
+  resolved, before any source is read. **Migration:** none for a specification
+  that ran. A specification that was going to fail fails earlier and names the
+  same cause.
+
+  Hand-editing the internal lists of a built specification is not supported and
+  is not tested. The constructors are the only way in.
+
 * A source interval whose end date is missing is a point interval on its start,
   everywhere and by construction. `.overlaps_interval()` took a policy argument
   with an `exclude` alternative that no caller ever selected, and

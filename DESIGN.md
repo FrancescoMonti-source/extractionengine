@@ -34,9 +34,14 @@ The executable definition has three deliberately separate layers:
    data-masked value expression and its result type.
 
 `resolve_variable_spec()` is the single compiled representation consumed by
-execution and provenance. Constructors fail closed: every accepted
-argument is validated and used. Reuse is ordinary R code returning a
-`variable_spec()`.
+execution and provenance. Constructors fail closed: every accepted argument is
+validated and used. The resolver adds the one check that needs the source
+registry -- that each activation names a registered prepared EDSAN source that
+binds the roles its channel type reads -- and the executors then run the
+resolved specification without deciding anything about it again: an unknown
+channel type, an unknown method, an incoherent combine or output, or an
+unactivated alias is a build-time error and has no runtime branch. Reuse is
+ordinary R code returning a `variable_spec()`.
 
 ## Concepts and activations
 

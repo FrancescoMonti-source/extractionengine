@@ -45,6 +45,15 @@ index_event <- function(source, selector, at = NULL,
     if (!is.character(source) || length(source) != 1L || !nzchar(source)) {
         stop("index_event() needs one source name.", call. = FALSE)
     }
+    spec <- EE_SOURCES[[source]]
+    if (is.null(spec)) {
+        stop("index_event() requires a registered prepared EDSAN source; got '",
+             source, "'.", call. = FALSE)
+    }
+    if (is.null(spec$roles$code)) {
+        stop("index_event(): source '", source, "' lacks a 'code' role.",
+             call. = FALSE)
+    }
     if (!inherits(selector, "ee_selector") ||
         !identical(selector$kind, "code")) {
         stop("index_event() needs a code selector created with icd10() or ccam().",

@@ -1,15 +1,5 @@
 # Channel and selector constructors ------------------------------------------
 
-.check_llm_definition <- function(x, what = "definition") {
-    required <- c("system_prompt", "type_builder", "prompt_builder", "parser")
-    if (!inherits(x, "ee_llm_definition") || !all(required %in% names(x)) ||
-        !is.function(x$type_builder) || !is.function(x$prompt_builder) ||
-        !is.function(x$parser)) {
-        stop(what, " is not a valid internal LLM definition.", call. = FALSE)
-    }
-    invisible(TRUE)
-}
-
 .check_channel_selector <- function(selector, expected_kind, type) {
     if (!inherits(selector, "ee_selector")) {
         stop(type, "_channel() selector must be created with a selector ",
