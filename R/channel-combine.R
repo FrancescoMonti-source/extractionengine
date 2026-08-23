@@ -53,4 +53,3 @@
         task_id = as.character(task_ids),
         hit = hit)
 }
-

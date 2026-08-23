@@ -1,4 +1,4 @@
-# extractionengine (development version)
+# extractionengine 0.1.0
 
 This cycle rewrote the execution engine while keeping the authoring contract.
 Every entry below changes code that already worked, so each one names its
