@@ -130,13 +130,6 @@ validate_source_view <- function(data, spec) {
     sprintf("%s:%08d", source, as.integer(rows))
 }
 
-.prepare_biology_view <- function(data) {
-    # redsan owns typing and preserves the normalized physical result columns.
-    # The engine adds no `value` alias: variable outputs read NUMRES, STRRES,
-    # DATEXAM, or other prepared columns explicitly in from_channel(value =).
-    redsan::process_biol(data)
-}
-
 # Preparation is per COHORT, not per variable: every variable of a protocol
 # derives its task universe from the same declared subject list, so the PATID
 # restriction and the source normalization below produce the same frames for all
@@ -277,9 +270,12 @@ EE_SOURCES <- list(
 
 # Source-specific boundary adaptation is itself registry data. Adding virology
 # or bacteriology means registering its source contract and, only if necessary,
-# its preparer here; execution never branches on a source name.
+# its preparer here; execution never branches on a source name. A preparer is
+# the redsan normalizer itself. The engine adds no `value` alias on top of it:
+# a variable output reads NUMRES, STRRES, DATEXAM or another prepared column
+# explicitly in from_channel(value =).
 EE_SOURCE_PREPARERS <- list(
-    biology = .prepare_biology_view)
+    biology = redsan::process_biol)
 
 # A run-level roster enumerates source units before selectors execute. It keeps
 # source membership because an ELTID complement is scoped to the participating
