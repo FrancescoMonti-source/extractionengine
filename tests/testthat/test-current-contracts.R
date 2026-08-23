@@ -1707,3 +1707,39 @@ test_that("a declared response schema constrains the record at every depth", {
             status = none$channel_status$processing_status),
         list(cell = list(), status = "completed"))
 })
+
+test_that("a source interval with no end date is a point interval on its start", {
+    # PMSI leaves DATSORT missing while a stay is open. The engine states one
+    # missing-endpoint policy rather than offering a per-call choice, so a stay
+    # still running on the day it began must answer exactly as a stay closed
+    # that same day (P1 == P2), and a stay that began before the window must not
+    # be dragged into it by its missing end (P3).
+    diagnoses <- tibble::tibble(
+        PATID = c("P1", "P2", "P3"),
+        EVTID = c("E1", "E2", "E3"),
+        ELTID = c("D1", "D2", "D3"),
+        diag = "E11.9",
+        DATENT = as.Date(c("2026-06-10", "2026-06-10", "2026-05-01")),
+        DATSORT = as.Date(c(NA, "2026-06-12", NA)))
+    diabetes <- concept_spec(
+        "diabetes",
+        channels = list(dx = code_channel("pmsi_diag", icd10("^E11"))))
+    windowed <- variable_spec(
+        name = "diabetes_in_window",
+        anchor = "anchor_date",
+        channels = list(dx = use_channel(
+            channel = "dx", concept = diabetes,
+            search_within = "PATID", window = c(-10, 0))),
+        output = bin_output(group_by = "PATID"))
+
+    run <- run_variable(
+        windowed,
+        cohort = tibble::tibble(
+            PATID = c("P1", "P2", "P3"),
+            anchor_date = as.Date("2026-06-15")),
+        sources = list(pmsi_diag = diagnoses))
+
+    expect_identical(
+        run$values$value[order(run$values$PATID)],
+        c(1L, 1L, 0L))
+})

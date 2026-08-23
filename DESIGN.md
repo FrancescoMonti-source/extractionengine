@@ -67,7 +67,9 @@ Operational row, group, and time rules also belong to the activation:
   source-row relation visible to each task;
 - `window = c(from_days, to_days)` filters this activation relative to the
   variable's shared `anchor`; it filters dates inside `search_within` and does
-  not infer or narrow that relation;
+  not infer or narrow that relation. A source interval whose end date is
+  missing — an open PMSI stay — is a point interval on its start. That is the
+  engine's single missing-endpoint policy and no activation can vary it;
 - `filter_rows` is evaluated independently per task after selector, relational,
   and window selection. It is a data-masked expression over the real
   prepared-source columns, returns one logical per row, treats `NA` as `FALSE`,

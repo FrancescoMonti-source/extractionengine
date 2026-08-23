@@ -165,6 +165,17 @@ migration.
 
 ## Other changes
 
+* A source interval whose end date is missing is a point interval on its start,
+  everywhere and by construction. `.overlaps_interval()` took a policy argument
+  with an `exclude` alternative that no caller ever selected, and
+  `measure_code_presence()` forwarded it. `redsan` leaves an open PMSI stay
+  with a missing `DATSORT` and prescribes no default; the engine now states one
+  policy in one place instead of letting two activations over the same rows
+  answer differently about the same stay. Behaviour is unchanged — `use_start`
+  was the default and the only value in use — and a new test pins the rule: a
+  stay still open on the day it began answers as a stay closed that same day,
+  and a stay that began before the window is not dragged into it.
+
 * Internal surfaces that only guarded against the package misusing itself are
   gone. `run_extraction()` takes `max_candidates` instead of an arbitrary
   candidate-selection function, and no longer re-validates what that function

@@ -414,14 +414,14 @@
     observations
 }
 
-.overlaps_interval <- function(start, end, lo, hi,
-                               missing_datsort = c("use_start", "exclude")) {
-    missing_datsort <- match.arg(missing_datsort)
-    end_eff <- if (identical(missing_datsort, "use_start")) {
-        dplyr::coalesce(end, start)
-    } else {
-        end
-    }
+# The engine has one missing-endpoint policy and states it here, once: a source
+# interval with no end date is a point interval on its start. PMSI leaves
+# DATSORT missing while a stay is open, so a stay still running on the day it
+# began answers exactly as a stay closed that same day, and no stay is dragged
+# into a window it started before. Callers do not choose; a per-call policy
+# would let two activations over the same rows disagree about the same stay.
+.overlaps_interval <- function(start, end, lo, hi) {
+    end_eff <- dplyr::coalesce(end, start)
     !is.na(start) & start <= hi & end_eff >= lo
 }
 
@@ -491,10 +491,8 @@ measure_code_presence <- function(source_table, tasks, codes,
                                   group_by = NULL, filter_groups = NULL,
                                   code_col = "diag", start_col = "DATENT",
                                   end_col = "DATSORT",
-                                  missing_end = c("use_start", "exclude"),
                                   field = "code_presence", source = "diagnosis") {
     match <- match.arg(match)
-    missing_end <- match.arg(missing_end)
     windowed <- !is.null(from_days) && !is.null(to_days)   # NULL window -> whole history
     # Grain is declared by the output contract (output$group_by) and passed as grain_keys by
     # the caller (run_variable): "PATID" alone scopes by subject (patient grain);
@@ -524,8 +522,7 @@ measure_code_presence <- function(source_table, tasks, codes,
     if (windowed) {
         scoped <- scoped %>% filter(.overlaps_interval(
             .data$.ee_t_start, .data$.ee_t_end,
-            anchor_date + from_days, anchor_date + to_days,
-            missing_datsort = missing_end))
+            anchor_date + from_days, anchor_date + to_days))
     }
     observations <- scoped %>%
         mutate(
