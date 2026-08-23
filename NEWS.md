@@ -177,3 +177,28 @@ migration.
   versions. The identity is computed once per prepared bundle, so a protocol
   pays for it once and every variable of a study records the same snapshot.
   *Measured:* 3.5 ms for a 4.55 MB prepared frame, 0.4% of that run.
+
+* `audit$execution_manifest` gains `parameters`, and simple external values are
+  now read once per run instead of once per task. An expression like
+  `NUMRES < .env$soglia` answers differently when `soglia` is 12 and when it is
+  13, and nothing recorded which one ran. Every `.env$name` an authored
+  expression reads is now photographed before the first activation executes, the
+  authored expression is rebound to read the photograph, and the same photograph
+  feeds the calculation and `manifest$parameters$captured`. A manifest that
+  agreed with a value the executor re-read later would be an audit lie no review
+  of the values can catch.
+
+  Only a simple value — an atomic vector, a `Date`, a `POSIXct` — is
+  photographed. A list, an object, or a function stays live and is named in
+  `manifest$parameters$not_captured`: `.env$weight_options$remove_missing` is
+  the idiom the data-mask rule already requires for an option list, so it keeps
+  working, and naming it says plainly that the run is not reproducible from the
+  manifest alone. **Migration:** none for a constant. An external value that
+  deliberately changed during a run — an active binding, a value a callback
+  mutates — is now read once at the start; that was previously one read per
+  task, and a variable that relied on it will change its answer.
+
+  Two expressions of one variable that read the same `.env$` name with two
+  different values now fail at run time. One variable is one definition; a name
+  meaning two numbers inside it cannot be recorded once, and recording either
+  would misdescribe the other expression. **Migration:** rename one of them.

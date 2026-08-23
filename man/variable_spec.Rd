@@ -118,7 +118,9 @@ available as bare names in data-masked expressions, and a bare name means such a
 column even when the authoring environment binds that name; only names whose
 nearest ordinary lexical binding is a function are resolved from that
 environment. \code{.data} supports programmatic selection and \code{.env$name}
-reads an external value.
+reads an external value. A simple external value is read once, before the first
+activation runs, so every task of the run sees the same reading and
+\code{audit$execution_manifest$parameters} records it.
 
 For \code{lucene_llm}, authored instructions live in the TypeObject and its
 field descriptions. The engine dynamically adds the optional rationale and an

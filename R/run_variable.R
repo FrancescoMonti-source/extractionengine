@@ -1700,7 +1700,8 @@
         }, character(1)))
 }
 
-.build_execution_manifest <- function(variable, sources = NULL) {
+.build_execution_manifest <- function(variable, sources = NULL,
+                                     parameters = NULL) {
     # The engine sends its own system prompt when an LLM activation does not
     # author one, so the manifest records the text that ran rather than the
     # authored silence.
@@ -1716,6 +1717,7 @@
         list(
             spec = spec,
             sources = .manifest_sources(variable, sources),
+            parameters = .manifest_snapshot(parameters),
             roster = .execution_roster_manifest(attr(sources, "ee_roster")),
             runtime = .manifest_runtime(),
             executed_at = Sys.time()),
@@ -1945,6 +1947,11 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
     if (!length(variable$channels)) {
         stop("variable_spec has no selected channels.", call. = FALSE)
     }
+    # Photograph the simple external parameters once, before any activation
+    # runs, and rebind the authored expressions to read the photograph. The
+    # calculation and the manifest then quote the same values by construction.
+    frozen <- .freeze_env_parameters(variable)
+    variable <- frozen$variable
     channel_chats <- .resolve_channel_chats(variable, chat)
     tasks <- .resolve_cohort(variable, cohort, sources)
     sources <- .prepare_execution_sources(sources, tasks)
@@ -2066,7 +2073,8 @@ run_variable <- function(variable, cohort = NULL, sources = NULL, chat = NULL) {
         counts = published$.audit_counts,
         llm_calls = published$.audit_llm_calls,
         lineage = published$.audit_lineage,
-        execution_manifest = .build_execution_manifest(variable, sources))
+        execution_manifest = .build_execution_manifest(
+            variable, sources, frozen$parameters))
     if (is.data.frame(out$overlap)) audit$overlap <- out$overlap
     if (is.data.frame(out$combine_keys)) {
         audit$combine_keys <- published$.audit_combine_keys

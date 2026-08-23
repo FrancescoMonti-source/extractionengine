@@ -106,7 +106,11 @@ executor read. For a registered source that snapshot is the prepared frame, so
 one hash covers the input, the cohort restriction, and the normalization; a
 tCorpus is hashed over its searchable content. An entry with an identity but no
 \code{roles} was supplied and not read by that variable, which is how the
-declared cohort appears. \code{runtime} records the R version, the platform, and
+declared cohort appears. \code{parameters} holds the external values the
+authored expressions read: \code{captured} for the simple ones, photographed
+once before execution and used by both the calculation and this record, and
+\code{not_captured} naming the lists and objects that stayed live.
+\code{runtime} records the R version, the platform, and
 the version of the engine and of every package it imports. Its \code{roster}
 table records source-qualified \code{PATID}, \code{EVTID}, and \code{ELTID} unit
 counts and whether each supplied source was enumerable. It records the

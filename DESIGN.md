@@ -78,7 +78,9 @@ Operational row, group, and time rules also belong to the activation:
   programmatic column selection. A bare name is always a prepared-source column,
   so a captured external value is read with `.env$name`; only a name whose
   nearest ordinary lexical binding is a function still resolves from the
-  authoring environment. This is an intermediate activation-local grouping
+  authoring environment. A simple `.env$name` value is read once before the
+  first activation runs, not once per task, and the manifest records the
+  reading that was used. This is an intermediate activation-local grouping
   only; it never sets
   the published grain, which belongs exclusively to the output constructor.
 
@@ -322,7 +324,11 @@ holds, per source the run knows about, which physical column each source role
 resolved to and a `digest` of the snapshot the executor read — the prepared
 frame for a registered source, so one hash covers the input, the cohort
 restriction, and the normalization; a tCorpus is hashed over its searchable
-content. Its `runtime` entry records the R version, the platform, and the
+content. Its `parameters` entry holds the external values the authored expressions read:
+the simple ones under `captured`, photographed once before execution so the
+calculation and the record quote the same values, and the lists and objects that
+stayed live named under `not_captured`. Its `runtime` entry records the R
+version, the platform, and the
 version of the engine and of every package it imports, because normalization,
 retrieval, and transport are owned by dependencies. Its `roster`
 table records source-qualified unit counts at `PATID`, `EVTID`, and `ELTID`,

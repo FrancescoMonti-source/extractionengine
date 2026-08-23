@@ -110,7 +110,9 @@ as `FALSE`, and surviving rows stay intact. Use `.data[[column]]` for a
 programmatically selected column. A bare name always means a prepared-source
 column, so an external value must be read with `.env$threshold`; the one
 exception is a name whose nearest ordinary lexical binding is a function, such
-as `mean` handed to `vapply()`, which stays ordinary author code.
+as `mean` handed to `vapply()`, which stays ordinary author code. Every
+`.env$name` a simple value resolves to is read once, before the first
+activation runs, and every task of the run sees that one reading.
 `filter_groups`, paired with `use_channel(group_by =)`, is evaluated in
 the same data mask and must return one non-missing logical per group while
 retaining all surviving rows of accepted groups. That `group_by` is an
@@ -490,7 +492,11 @@ candidate, has no call row. The
 not a chronological activity log. Its `spec` entry is the resolved definition the
 executor read, with author code — the data-masked expressions, the `select_event`
 closure, the validated combine expression — recorded as text rather than as live
-objects. `sources` holds one entry per source the run knows about: which
+objects. `parameters` holds the external values those expressions read:
+`captured` for the simple ones, photographed once before execution and used by
+both the calculation and this record, and `not_captured` naming the lists and
+objects that stayed live, so a run that cannot be reproduced from the manifest
+alone says so. `sources` holds one entry per source the run knows about: which
 physical column each source role resolved to, and `class`, `n_rows`, and
 `digest`, a hash of the snapshot the executor read. An entry with an identity
 but no `roles` was supplied and not read by that variable, which is how the

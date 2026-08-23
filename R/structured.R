@@ -70,9 +70,12 @@
 # publishes that binding's value with genuine evidence rows attached to it.
 # Explicit .data accesses always name prepared columns. The walk is static, so a
 # misspelled column fails even when the selector produces zero target rows.
+# It returns both halves of what the expression reads: `columns` from the
+# prepared source, and `external`, the `.env$` names it reaches outside it.
 .data_mask_references <- function(expression) {
     env <- rlang::quo_get_env(expression)
     required <- character()
+    external <- character()
 
     is_function_binding <- function(name) {
         binding_env <- env
@@ -202,6 +205,7 @@
                     stop(".env$", key, " is not defined in the expression environment.",
                          call. = FALSE)
                 }
+                external <<- c(external, key)
                 return(locals)
             }
             # In ordinary `$`, the field name is not evaluated. An ordinary
@@ -221,7 +225,7 @@
     }
 
     visit(rlang::quo_get_expr(expression))
-    unique(required)
+    list(columns = unique(required), external = unique(external))
 }
 
 .validate_data_mask_expression <- function(expression, columns, field, what) {
@@ -236,7 +240,7 @@
                  "' could not resolve its data-mask references: ",
                  conditionMessage(cnd), call. = FALSE)
         })
-    missing <- setdiff(references, columns)
+    missing <- setdiff(references$columns, columns)
     if (length(missing)) {
         stop(what, " for channel '", field,
              "' references missing prepared-source column(s): ",
@@ -246,6 +250,75 @@
              "value with .env$name.", call. = FALSE)
     }
     invisible(TRUE)
+}
+
+# --- frozen external parameters ----------------------------------------------
+# `NUMRES < .env$soglia` answers differently when soglia is 12 and when it is 13,
+# and nothing recorded which one ran. The values are therefore photographed once,
+# before any activation executes, and the same photograph feeds the calculation
+# and the manifest -- a manifest agreeing with a value the executor re-read later
+# would be an audit lie no review of the values can catch.
+#
+# Only a simple value is photographed. A list, an object, or a function stays
+# live: `.env$weight_options$remove_missing` is the idiom the data-mask rule
+# already requires for an option list, so rejecting it would break authoring that
+# this package made mandatory, and serializing it would put the authoring session
+# in the audit trail. The manifest records such a name as read and not captured,
+# because a run that silently omitted the dependency would claim a
+# reproducibility it does not have.
+.is_simple_parameter <- function(value) {
+    if (is.null(value) || !is.atomic(value)) return(FALSE)
+    carried <- setdiff(names(attributes(value)), c("names", "class", "tzone"))
+    if (length(carried)) return(FALSE)
+    inherits(value, c("Date", "POSIXct")) ||
+        identical(class(value), typeof(value)) ||
+        identical(class(value), "numeric")
+}
+
+# Rewrite every data-masked quosure in a resolved definition. The walk is
+# generic, like the manifest snapshot: a future authoring argument that captures
+# an expression is frozen without an edit here.
+.map_spec_quosures <- function(x, transform) {
+    if (rlang::is_quosure(x)) return(transform(x))
+    if (!is.list(x)) return(x)
+    mapped <- lapply(unclass(x), .map_spec_quosures, transform = transform)
+    attributes(mapped) <- attributes(x)
+    mapped
+}
+
+.freeze_env_parameters <- function(variable) {
+    captured <- list()
+    not_captured <- character()
+    freeze <- function(quosure) {
+        env <- rlang::quo_get_env(quosure)
+        keys <- .data_mask_references(quosure)$external
+        frozen <- list()
+        for (key in keys) {
+            value <- rlang::env_get(env, key, inherit = TRUE)
+            if (!.is_simple_parameter(value)) {
+                not_captured <<- unique(c(not_captured, key))
+                next
+            }
+            # One variable is one definition: a name that means two different
+            # values inside it cannot be recorded once, and choosing either
+            # would misdescribe the other expression.
+            if (key %in% names(captured) &&
+                !identical(captured[[key]], value)) {
+                stop("Expressions of variable '", variable$name,
+                     "' read .env$", key,
+                     " with two different values; rename one of them so the ",
+                     "manifest can record what ran.", call. = FALSE)
+            }
+            frozen[[key]] <- value
+            captured[[key]] <<- value
+        }
+        if (!length(frozen)) return(quosure)
+        rlang::quo_set_env(
+            quosure, rlang::new_environment(data = frozen, parent = env))
+    }
+    list(
+        variable = .map_spec_quosures(variable, freeze),
+        parameters = list(captured = captured, not_captured = not_captured))
 }
 
 # Data-masked activation expressions see complete prepared-source columns and the

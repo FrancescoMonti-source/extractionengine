@@ -900,11 +900,18 @@ presenza significa fornita, `roles` significa letta da quella variabile,
 attaccata al bundle preparato accanto al roster. Il manifest stesso è 13,7 KB
 sul benchmark da 2 000 task.
 
-**5.3 — I semplici parametri `.env`.** Il manifest **non** serializza l'ambiente
-R. Registra però i semplici valori atomici letti esplicitamente con `.env$nome`:
-vengono fotografati una volta prima dell'esecuzione e la stessa fotografia
-alimenta calcolo e manifest. Funzioni locali, closure, active binding e oggetti
-arbitrari restano codice di authoring versionato, non payload del manifest.
+**5.3 — I semplici parametri `.env`. Chiuso il 2026-08-23.**
+
+Ogni `.env$nome` letto da un'espressione autorata viene fotografato una volta,
+prima che la prima attivazione giri; la quosure autorata viene ri-legata a un
+figlio del proprio ambiente che contiene i valori catturati, così calcolo e
+`manifest$parameters$captured` citano la stessa fotografia **per costruzione**,
+non perché qualcuno passa lo stesso oggetto a due posti.
+
+*[misurato]* un active binding che conta le proprie letture viene forzato **una
+volta** su una run a due task; togliendo il congelamento viene forzato **due**
+volte, una per task, con valori pubblicati identici. È l'intera affermazione in
+un numero: stessa risposta, letta una volta, registrata.
 
 **Decisione chiusa dal proprietario (2026-08-23): un valore `.env$` non semplice
 resta letto dal vivo ed è registrato solo per nome**, marcato esplicitamente
@@ -914,6 +921,11 @@ Parte 4, e una lista può contenere una closure — e non lo si rifiuta al build
 reso obbligatorio. Un manifest che omettesse la dipendenza in silenzio sarebbe
 la solita bugia di audit; uno che la nomina dice chiaramente che quella run non
 è riproducibile dal solo manifest.
+
+**Un nuovo fail-fast.** Due espressioni della stessa variabile che leggono lo
+stesso nome `.env$` con due valori diversi adesso falliscono: una variabile è
+una definizione, e un nome che dentro di essa vale due numeri non è
+registrabile una volta sola.
 
 **5.4 — Riuso dei canali fra variabili, ristretto al recupero Lucene e alle
 chiamate al modello.** Il profilo dice che l'esecutore strutturato è il 2,1 % di
@@ -993,6 +1005,6 @@ non plumbing da coordinare con 1.3.
 
 **Stato al 2026-08-23.** Fasi 0, 1, 2, 3, 3b e 4 sono committate sul ramo
 `phase-0-cleanup`, che non è ancora entrato in `master`; della Fase 5 sono
-chiuse la 5.1 e la 5.2. **Non resta nessun difetto conosciuto che pubblichi un
-valore falso**, e tutti gli undici difetti della Parte 2 e le decisioni di fine
-Fase 4 sono chiusi.
+chiuse la 5.1, la 5.2 e la 5.3; resta la 5.4. **Non resta nessun difetto
+conosciuto che pubblichi un valore falso**, e tutti gli undici difetti della
+Parte 2 e le decisioni di fine Fase 4 sono chiusi.

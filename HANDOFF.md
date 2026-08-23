@@ -2895,3 +2895,63 @@ the pre-existing `NEWS.md` heading. No real model call was made.
 `tests/testthat/test-current-contracts.R`, `NEWS.md`, `README.md`, `DESIGN.md`,
 `man/run_variable.Rd`, `vignettes/getting-started.Rmd`, `PLAN.md`, and this
 entry.
+
+## Phase 5.3 external parameters are photographed once (2026-08-23)
+
+**Boundary.** The third Phase 5 slice, and defect I. It changes *when* an
+external value is read and what the manifest records about it. Published values
+are unchanged for a constant parameter and change only for a value that was
+deliberately varying during a run.
+
+**Change.** `NUMRES < .env$soglia` left the same manifest whether soglia was 12
+or 13, and re-read the binding once per task. Every `.env$name` an authored
+expression reads is now read once, before the first activation executes; the
+authored quosure is rebound to a child of its own environment holding the
+captured values, so the calculation and `manifest$parameters$captured` quote the
+same photograph **by construction** rather than by passing the same object to
+two places.
+
+**The rebinding shadows values, never functions.** Only a simple value is
+captured, so a name bound to a function is never shadowed and `mean` handed to
+`vapply()` keeps resolving through the parent. A captured name that collides
+with a prepared column is still treated as a column: the data mask shadows the
+environment for bare names, and `is_function_binding()` sees a value, not a
+function.
+
+**Measured, and this is the sentinel.** An active binding that counts its own
+reads is forced **once** across a two-task run; with the freeze removed it is
+forced **twice**, one per task, with identical published values. That is the
+whole claim in one number: same answer, read once, recorded.
+
+**A list stays live, and the manifest says so.** Only atomic values, `Date` and
+`POSIXct` are photographed. `.env$weight_options$remove_missing` is the idiom
+the Phase 1.3 data-mask rule made mandatory for an option list, so rejecting it
+would break authoring this package required, and serializing it would put the
+authoring session in the audit trail — the Part 4 refusal. Such a name is
+recorded under `parameters$not_captured`: a run that cannot be reproduced from
+the manifest alone should say so rather than look complete. **Decision confirmed
+with the owner before implementing.**
+
+**One new fail-fast.** Two expressions of one variable that read the same
+`.env$` name with two different values now fail. One variable is one definition;
+a name meaning two numbers inside it cannot be recorded once, and recording
+either would misdescribe the other expression. The error names the variable and
+tells the author to rename.
+
+**Two generic walks, not three hard-coded field names.**
+`.data_mask_references()` now returns `columns` and `external` instead of only
+the columns — the `.env` branch already resolved the key and threw it away.
+`.map_spec_quosures()` rewrites every quosure anywhere in a resolved definition,
+like the manifest snapshot, so a future authoring argument that captures an
+expression is frozen without an edit.
+
+**Verification.** All 93 current-contract expectations pass with no warnings
+(89 before). The seven Phase 0 differential cases are unchanged from
+`before-phase5.rds`; the lab fixture exercises the freeze, since it filters on
+`.env$minimum_value`. A full source build creates both vignettes and
+`R CMD check --no-manual --no-build-vignettes` finishes with `Status: 1 NOTE`,
+the pre-existing `NEWS.md` heading. No real model call was made.
+
+**Files changed.** `R/structured.R`, `R/run_variable.R`,
+`tests/testthat/test-current-contracts.R`, `NEWS.md`, `README.md`, `DESIGN.md`,
+`man/run_variable.Rd`, `man/variable_spec.Rd`, `PLAN.md`, and this entry.

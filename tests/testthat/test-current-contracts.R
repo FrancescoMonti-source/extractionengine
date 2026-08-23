@@ -257,9 +257,13 @@ test_that("data-mask validation does not execute active bindings", {
         ".data_mask_references", "extractionengine")(expression)
 
     expect_identical(
-        list(references = references, active_binding_reads = reads),
         list(
-            references = c("NUMRES", "active_helper"),
+            columns = references$columns,
+            external = references$external,
+            active_binding_reads = reads),
+        list(
+            columns = c("NUMRES", "active_helper"),
+            external = character(),
             active_binding_reads = 0L))
 })
 
@@ -1352,4 +1356,108 @@ test_that("the manifest identifies the source snapshot and the runtime", {
             engine = as.character(utils::packageVersion("extractionengine")),
             owners = TRUE,
             r = as.character(getRversion())))
+})
+
+test_that("simple external parameters are photographed once before execution", {
+    biology <- tibble::tibble(
+        PATID = c("P1", "P1", "P2"), EVTID = c("E1", "E1", "E2"),
+        ELTID = c("L1", "L2", "L3"),
+        DATEXAM = as.Date("2026-01-01") + 0:2,
+        TYPEANA = "K.K", NUMRES = c(4.2, 5.1, 3.9), STRRES = NA_character_)
+    potassium <- concept_spec(
+        "potassium",
+        channels = list(result = lab_channel(selector = analyte("K.K"))))
+    cohort <- tibble::tibble(PATID = c("P1", "P2"))
+    run_at <- function(threshold) {
+        soglia <- threshold
+        run_variable(
+            variable_spec(
+                name = "k_mean",
+                channels = list(result = use_channel(
+                    "result", concept = potassium, search_within = "PATID",
+                    filter_rows = NUMRES >= .env$soglia)),
+                output = from_channel(
+                    "result", group_by = "PATID", value = mean(NUMRES),
+                    ptype = double())),
+            cohort, sources = list(biology = biology))
+    }
+
+    # The value that ran is recorded, so two runs of the same definition are
+    # distinguishable. The manifest used to be identical for both.
+    low <- run_at(4)
+    high <- run_at(5)
+    expect_identical(
+        list(
+            values = c(low$values$value[[1]], high$values$value[[1]]),
+            recorded = c(
+                low$audit$execution_manifest$parameters$captured$soglia,
+                high$audit$execution_manifest$parameters$captured$soglia)),
+        list(values = c(4.65, 5.1), recorded = c(4, 5)))
+
+    # Once per run, not once per task: an active binding counting its own reads
+    # is forced a single time however many tasks the run has. Reading it live
+    # returned one read per task, so a value could change mid-run.
+    reads <- 0L
+    env <- rlang::env(parent = globalenv())
+    rlang::env_bind_active(env, live_threshold = function(value) {
+        reads <<- reads + 1L
+        4
+    })
+    live <- run_variable(
+        variable_spec(
+            name = "k_live",
+            channels = list(result = use_channel(
+                "result", concept = potassium, search_within = "PATID",
+                filter_rows = !!rlang::new_quosure(
+                    quote(NUMRES >= .env$live_threshold), env))),
+            output = from_channel(
+                "result", group_by = "PATID", value = mean(NUMRES),
+                ptype = double())),
+        cohort, sources = list(biology = biology))
+    expect_identical(
+        list(reads = reads, value = live$values$value[[1]]),
+        list(reads = 1L, value = 4.65))
+
+    # An option list is the idiom the data-mask rule requires for external
+    # configuration, so it keeps working; it is not photographed, and the
+    # manifest names it rather than implying the run was fully captured.
+    weight_options <- list(na_rm = TRUE)
+    listed <- run_variable(
+        variable_spec(
+            name = "k_options",
+            channels = list(result = use_channel(
+                "result", concept = potassium, search_within = "PATID")),
+            output = from_channel(
+                "result", group_by = "PATID",
+                value = mean(NUMRES, na.rm = .env$weight_options$na_rm),
+                ptype = double())),
+        cohort, sources = list(biology = biology))
+    expect_identical(
+        list(
+            value = listed$values$value[[1]],
+            captured = names(
+                listed$audit$execution_manifest$parameters$captured),
+            named = listed$audit$execution_manifest$parameters$not_captured),
+        list(value = 4.65, captured = NULL, named = "weight_options"))
+
+    # One variable is one definition. A name meaning two different values
+    # inside it cannot be recorded once, so it fails rather than recording
+    # whichever expression happened to be walked last.
+    first <- rlang::env(parent = globalenv(), soglia = 4)
+    second <- rlang::env(parent = globalenv(), soglia = 5)
+    expect_error(
+        run_variable(
+            variable_spec(
+                name = "k_conflict",
+                channels = list(result = use_channel(
+                    "result", concept = potassium, search_within = "PATID",
+                    filter_rows = !!rlang::new_quosure(
+                        quote(NUMRES >= .env$soglia), first))),
+                output = from_channel(
+                    "result", group_by = "PATID",
+                    value = !!rlang::new_quosure(
+                        quote(mean(NUMRES[NUMRES >= .env$soglia])), second),
+                    ptype = double())),
+            cohort, sources = list(biology = biology)),
+        "two different values")
 })
