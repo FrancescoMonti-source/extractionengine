@@ -123,11 +123,6 @@ format_task_target <- function(task_row, group_by) {
     paste(sprintf("%s: %s", keys, values), collapse = "\n")
 }
 
-.llm_missing_value <- function(type) {
-    prototype <- .llm_field_prototype(type)
-    if (is.list(prototype)) return(list(NULL))
-    prototype[NA_integer_]
-}
 
 # One present value against one declared type, at any depth. A declared schema
 # either constrains the published record or it does not; constraining it at
