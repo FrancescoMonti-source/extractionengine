@@ -177,12 +177,14 @@ validate_source_view <- function(data, spec) {
         }
         prepare <- EE_SOURCE_PREPARERS[[source]] %||% base::identity
         data <- prepare(data)
-        if (!"source_row_id" %in% names(data)) {
-            data <- tibble::add_column(
-                data,
-                source_row_id = .source_row_ids(source, source_rows),
-                .before = 1L)
-        }
+        # source_row_id is the engine's own coordinate, not a source column: no
+        # caller supplies one and no redsan normalizer emits one, so it is
+        # always created here and is character by construction. add_column()
+        # fails loudly if that ever stops being true.
+        data <- tibble::add_column(
+            data,
+            source_row_id = .source_row_ids(source, source_rows),
+            .before = 1L)
         sources[[source]] <- data
     }
     attr(sources, "ee_prepared_patids") <- cohort_patids

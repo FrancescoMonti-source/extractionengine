@@ -30,7 +30,7 @@
     .require_columns(source_rows, source_required, source_label)
 
     task_ids <- as.character(tasks$task_id)
-    source_ids <- as.character(source_rows$source_row_id)
+    source_ids <- source_rows$source_row_id
     if (anyNA(task_ids) || any(!nzchar(task_ids)) || anyDuplicated(task_ids)) {
         stop("tasks$task_id must be non-missing and unique", call. = FALSE)
     }
@@ -510,7 +510,6 @@ measure_code_presence <- function(source_table, tasks, codes,
     source_columns <- names(source_table)
     rows <- tibble::as_tibble(source_table) %>%
         mutate(
-            source_row_id = as.character(source_row_id),
             .ee_t_start = .clinical_date(.data[[start_col]]),
             .ee_t_end = .clinical_date(.data[[end_col]]))
     tkeys <- tasks %>%
@@ -707,14 +706,6 @@ measure_analyte_values <- function(source_table, tasks, analytes,
     # or collapsed into a synthetic `value` lane.
     biol <- tibble::as_tibble(source_table)
     source_columns <- names(biol)
-    # The native exam identifier is optional provenance. `source_row_id` is the
-    # execution coordinate for each prepared result row.
-    id_columns <- intersect(
-        c("source_row_id", "PATID", "EVTID", "ELTID"),
-        names(biol))
-    for (column in id_columns) {
-        biol[[column]] <- as.character(biol[[column]])
-    }
     biol$.ee_point_date <- .clinical_date(biol[[date_col]])
     biol$.ee_analyte <- as.character(biol[[analyte_col]])
 

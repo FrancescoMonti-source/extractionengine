@@ -177,6 +177,13 @@ migration.
   supplied as a prepared frame, or as a `list(corpus, docs_index)` bundle, is
   taken at its word: it must already be a normalized `redsan` view.
 
+* `source_row_id` is now always created rather than created-when-absent. It is
+  the engine's own evidence coordinate, not a source column — no `redsan`
+  normalizer emits one — so it is `character` by construction and the three
+  executor-side casts are gone. A prepared view that does arrive carrying a
+  `source_row_id` of its own now fails loudly instead of silently deciding the
+  column's type.
+
 * A declared LLM response schema is now enforced at every depth. Only top-level
   scalar and enum fields were checked; an object or an array of objects fell
   through unvalidated, so a nested enum outside its allowed values, or a
