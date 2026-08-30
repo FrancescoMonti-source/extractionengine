@@ -3023,3 +3023,168 @@ the pre-existing `NEWS.md` heading. No real model call was made.
 **Files changed.** `R/channel-cache.R` (new), `R/run_variable.R`,
 `tests/testthat/test-current-contracts.R`, `NEWS.md`, `README.md`, `DESIGN.md`,
 `man/run_variable.Rd`, `PLAN.md`, and this entry.
+
+## First outside consumer: the HAS denutrition grid -- Claude (2026-08-28)
+
+Written from the `redsan-coding` side, in a session about the denutrition audit
+harness, so nothing here was verified against a run of this engine. No file of
+this repo was changed. The sketch it refers to lives at
+`../redsan-coding/analysis/denut_extraction_specs.R` and resolves against the
+installed build of this package.
+
+**Goal.** Answer one question the owner raised: could `redsan-coding` run on
+this engine, and what would break. The HAS 2021 denutrition grid -- 38 criteria,
+three age bands, two arms -- was written out as concepts and variables and put
+through the real constructors.
+
+**Result: nine concepts, nine variables, all nine resolve.** The decomposition
+that survived is *split by where to look, not by which reading you want*:
+
+- Concepts are clinical primitives, not criteria: `poids`, `taille`, `imc`,
+  `albumine`, `apports`, `absorption`, `agression`, `masse_musculaire`,
+  `couloir_ponderal`. A criterion carries a threshold and this layer may not.
+- One variable per measure, publishing a value or a structured judgement per
+  stay. **Not one variable per criterion, and not one per severity band.**
+  Moderate and severe read the same number at two thresholds; splitting there
+  reads every document twice and lets two readings disagree about a value they
+  share. The cache does not rescue it -- two response schemas are two resolved
+  configurations, so two calls.
+- The 38 criteria, the bands, the thresholds and the E43/E44.0 verdict stay in
+  the caller. That is DESIGN's product boundary working, not a workaround.
+
+**A non-finding worth recording so nobody re-derives it.** The
+`combine_channels()` refusal of `lucene_llm` activations does not block this
+consumer. A grid publishes per-criterion payloads with `from_channel()` and does
+its boolean algebra in researcher-owned code; the engine's combine is simply
+unused. `hit_when` is not what denutrition needs.
+
+### Two gaps this consumer actually hits
+
+**1. The selector layer assumes cleaner source vocabularies than EDSAN has.**
+Two instances in one afternoon, and they are the same shape:
+
+- `analyte()` selects `TYPEANA` codes. The caller's `.select_albumin()` selects a
+  `TYPEANA_LABEL` regex, because the codes are not stable across its sources.
+  Everything else about that selection -- unit, plausibility bounds, an
+  exclusion list -- transcribes into `filter_rows` exactly. Only the first hook
+  is missing.
+- `text_channel()` accepts `lucene_query()` only. Lucene retrieves by
+  vocabulary; some targets are defined by *form* and cannot be said in it at
+  all: sub-token structures (`E44.0`, `0,5 mg/kg/j`), character classes ("a
+  number next to kg" -- Lucene has no digit class), punctuation and layout (a
+  table row `Poids | 84 | 75` carrying no matching word).
+
+  Owner's position, and it stands: sometimes you want retrieval *by* regex, and
+  corpustools cannot approximate it. The costs are real and worth stating
+  before anyone reaches for it -- **index versus scan** (several full corpus
+  passes per run; irrelevant at 779 stays, not at warehouse scale) and, more
+  importantly, **the artifact**. Retrieval today yields `hit_ref` + `hit_text` +
+  a sentence-built snippet, and dedup and `artifact_position` rest on that
+  sentence model. A regex match is a character span. Making it produce a snippet
+  on the same footing is work in the audit contract, not in `text_channel()`.
+
+  A cheap half already works: retrieve with Lucene, narrow with a regex in
+  `filter_rows` over `snippet_text`. It runs before the `method` branch, so it
+  serves `lucene` (changing membership) and `lucene_llm` (changing what survives
+  `max_candidates`) alike, and demoted snippets stay visible at `selector` in the
+  lineage. It can only narrow, never widen -- which is exactly why true regex
+  retrieval remains a separate, missing thing.
+
+**2. A derived value has no owner.** BMI is weight over height squared. A
+variable may activate channels from two concepts -- DESIGN allows it explicitly
+-- but `from_channel()` publishes one activation's payload, so the value
+expression cannot cross aliases. That is the first refused capability in
+DESIGN's Non-goals ("a sodium/potassium ratio, a mean of means"), and the
+denutrition grid is a concrete second case for it.
+
+It is not urgent, for a reason the sketch surfaced: **BMI is also a primitive.**
+On a compte rendu it is usually written down, so the stated value is the main
+road and the computed one a fallback -- which is also how a coder works. The
+question the refusal really poses is not whether the arithmetic is possible but
+**who owns the provenance of a derived number**: divided in the caller, the
+computed BMI has no evidence row of its own.
+
+### What this consumer would gain, stated honestly
+
+Little, today, for denutrition alone. The retrieval, evidence and provenance it
+would stop maintaining are its own and they work. One thing is a real
+capability it cannot build cheaply: **patient scope**. Its bundle is a stay, and
+the usual weight before the illness is often recorded months earlier in another
+stay; no prompt recovers a document the model was never shown.
+`search_within = "PATID"` with a window does.
+
+An earlier claim in the same session -- that `audit$lineage$furthest_stage`
+answers the caller's omission problem -- was **overstated and is withdrawn**.
+Lineage sees what entered the funnel; evidence no selector ever reached is still
+silent.
+
+### Vocabulary: the friction the owner named
+
+The owner's own report is that the vocabulary is what blocks them from seeing
+clearly, and the worked example is `filter_rows`: they had to ask what it does
+and at what level. The diagnosis is that the name is mechanical for a
+polymorphic operation -- it says what it does to the structure, not what it
+operates on, and "rows" is four different things by channel type (lab rows,
+code rows, document metadata, snippets).
+
+OHDSI has named these objects for twenty years, and the mapping is close enough
+to borrow rather than invent:
+
+| here | OHDSI |
+| --- | --- |
+| `concept_spec` + selector | concept set |
+| `anchor` / `index_event()` | index date (entry event) |
+| `window = c(from, to)` | temporal logic relative to index |
+| `filter_rows` | **domain-specific attribute** |
+| `filter_groups` + `group_by` | inclusion rule with an occurrence count |
+| `audit$counts` stages | attrition chart |
+| combine at EVTID, output at PATID | person-level rollup |
+
+Note what their name for `filter_rows` does: **domain-specific attribute** says
+what it constrains, and "domain" is precisely the axis whose absence makes the
+current name polymorphic.
+
+Two places the mapping fails, so nobody renames past them:
+
+- `furthest_stage` is **not** an attrition chart. Attrition counts persons
+  dropped per rule; `furthest_stage` partitions artifacts by terminal stage. It
+  is finer and no OHDSI equivalent was found. Keep it; a per-output-unit
+  attrition alongside it is the thing that has a name.
+- `search_within` has no clean equivalent, because OMOP fixes the grain in the
+  schema (`person`, `visit_occurrence`) instead of declaring it per activation.
+  This API says something theirs does not need to say.
+
+Worth reading, in order: [Book of OHDSI ch. 10](https://ohdsi.github.io/TheBookOfOhdsi/Cohorts.html)
+for the vocabulary; [Capr's design guide](https://ohdsi.github.io/Capr/articles/capr_design.html)
+as the nearest design precedent -- an R DSL whose stated goal is "a human
+readable description of a cohort while also being executable on an OMOP Common
+Data Model", the same sentence this package could write about itself;
+[appendix B](https://ohdsi.github.io/TheBookOfOhdsi/CohortDefinitions.html) for
+the catalogue of traps. Not to adopt: OMOP presupposes mapped, standardized
+vocabularies, which is the assumption that just failed twice above.
+
+**On prior art generally.** The declarative-cohort-with-temporal-windows layer
+is well-trodden (OHDSI, and Capr in R). What was not found packaged anywhere is
+this package's centre: **one execution model in which a deterministic channel
+and a model-interpreted text channel are citizens of the same kind** -- same
+grain, same `channel_status`, same evidence, same lineage, same refusal
+contract. OHDSI's `NOTE_NLP` is a landing table with provenance fields (system
+name and version, negation/subject/certainty modifiers), not an execution model:
+no resolution of citations against the snippets actually shown, no refusal
+contract, and a text signal is not a first-class channel inside a definition.
+Search handles for the grounding half: *attributed question answering*, *AIS
+(Attributable to Identified Sources)*.
+
+**Open questions for whoever picks this up.**
+
+- Which `group_by` keys does the text branch accept? DESIGN describes it as an
+  activation-local intermediate grouping without listing admissible values, and
+  the `filter_groups` shape above (keep every snippet of a document where one
+  snippet carries a real measurement) depends on the answer.
+- Is a label selector for `lab_channel()` the right fix, or should the caller
+  obtain stable analyte codes? The first is an API change, the second a data
+  problem, and only the owner can say which is cheaper.
+- Does the vocabulary migration happen, and how far? Renaming `filter_rows` is
+  cheap now and expensive after the first outside reader.
+
+**Files changed.** This entry only.
