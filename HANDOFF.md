@@ -3188,3 +3188,123 @@ Search handles for the grounding half: *attributed question answering*, *AIS
   cheap now and expensive after the first outside reader.
 
 **Files changed.** This entry only.
+
+## OMOP/CAPR confrontation + first invariant harvest -- Claude (2026-09-15)
+
+Owner asked to confront the redsan extraction API with OMOP/CAPR and look for
+improvement opportunities. Two thirds of the session was the owner correcting
+the comparison; the durable payload is the invariant ledger at the bottom, which
+came out of an `invariant-elicitation` harvest pass and has not yet been landed
+in code.
+
+**Framing correction (owner pushed, accepted).** redsan is not CAPR's
+counterpart. redsan sits where the OHDSI *ETL and CDM tables* sit; CAPR's
+counterpart is this package. So the findings worth having are at the seam
+between the two repos, not in either one measured against OHDSI.
+
+**Two findings withdrawn — record them so nobody re-proposes them.**
+
+- *References vs. the OMOP vocabulary.* Proposed giving `ref_cim10` a parent
+  column to get `descendants()` semantics. Wrong. `concept_ancestor` earns its
+  cost from cross-vocabulary federation — mapping ICD-9/ICD-10/Read/SNOMED onto
+  one concept space so a definition written once runs at 200 sites. One site,
+  codes already in authoritative national nomenclatures: the cost structure is
+  absent. Worse, CIM-10 is notation-based — E11.21 ⊂ E11.2 ⊂ E11 *is* the
+  construction rule of the classification — so `match = "regex"` is not a
+  workaround for a missing tree, it reads the tree that is in the identifier.
+  The counter-example offered against regex (diabetes spans E10–E14 *and* O24)
+  refutes the proposal too: that is not a node anywhere in CIM-10, so a parent
+  column would not catch it either. Only a curated list does, which is what
+  `icd10(c(...), match = "regex")` already is.
+- *An `observation_period` analogue.* Proposed a coverage table so that "no hit"
+  could be distinguished from "not observed". Over-built for the actual fact.
+  Owner: modules cover all services and all recoverable history; digitisation
+  was staggered but the last ~10 years are good quality; and the engine receives
+  a cohort that has already been through a selection. That is a **study-window
+  caveat, not a table** — one documented line ("results before ~2015 may reflect
+  digitisation gaps rather than clinical absence") plus the window the manifest
+  already records.
+
+**What survived.**
+
+- **`source_row_id` is a row position and it anchors the audit trail.**
+  `data.R:129` builds evidence coordinates as `sprintf("%s:%08d", source, row)`.
+  Coherent within one run — positions are deliberately preserved before the
+  PATID filter — but not across runs: refetch with a different `periods_by` and
+  `.edsan_combine()` concatenates batches in another order, so every id shifts.
+  An `evidence_ref` in a manifest therefore cannot be re-resolved against a fresh
+  extraction; it *will* resolve, to a different row. Identity belongs to the
+  producer (redsan's normalizers), not to this package's execution boundary. The
+  confirmed grain keys below are the fix.
+- **`edsan_sources()` declares `grain` as a noun, not as a key.** It is the
+  contract this package already reads live (`data.R:24`), so a `grain_key`
+  column is the cheapest high-leverage change available.
+- **`source_policy = "c_over_dw"` applies asymmetrically.** `process_pmsi()`
+  filters `main` but derives `actes`/`diag` from unfiltered rows, and neither
+  detail table carries `SRC`, so a caller cannot reproduce the filter on them.
+  Owner confirmed C > DW is *source mechanics* (DW is a stale mirror of C), which
+  settles the design question in favour of the current default and makes the
+  asymmetry a defect rather than a judgment call. Whether it bites reduces to
+  whether DW entries carry `DALL`/`CODEACTE` payloads — unknown, and to be
+  settled by assertion on one real month rather than by memory.
+- **Time roles are declared twice.** `DOCS_SOURCE`/`DIAG_SOURCE`/`BIOL_SOURCE`/
+  `ACTE_SOURCE` (`data.R:188-263`) hand-type `point_date`/`event_start`/
+  `event_end` that `edsan_sources()` already holds as `source_time_start`/
+  `source_time_end`. Derive them; the contract is already being read.
+- **`ccam()` does not constrain `NOMENCLATURE`.** It matches the `code` role
+  (`CODEACTE`) while redsan's own `actes` reference is keyed on
+  `NOMENCLATURE + CODEACTE`. Live only if the CCAM/CDAM/CSARR/NGAP code spaces
+  overlap — still unanswered.
+- **Where copying OHDSI would be a downgrade:** `trim_doceds_text()` is more
+  auditable than the `NOTE_NLP` pipeline (span-level removals in original
+  coordinates, order-independent by construction, SHA-256 rule digest,
+  per-rule counts documented as non-summable). Keeping native French identifiers
+  is right while there is no federation to pay for.
+
+**Two code facts found while checking the owner's answers.**
+
+- `ACTIVITE` is retrieved nowhere in redsan. So activité 1 and activité 4 arrive
+  as rows identical in every fetched column: dedupe is the only available option
+  and loses nothing, because the distinguishing field was never fetched. A
+  protocol needing "was an anaesthetist involved" must add `ACTIVITE` to the
+  requested fields *before* deduping.
+- There is no `CR`/status/`COMMENTAIRE` column in `biol.R` or `get_edsan.R`. The
+  owner's belief that a failed exam is flagged in the CR column rests on a
+  column redsan does not fetch. Today a failed exam and an exam never ordered are
+  indistinguishable downstream. "If it's not there it's not there" is right about
+  the *value* and wrong about the *count of attempts*, which is what a variable
+  like "was Hb checked during the stay" measures.
+
+**Invariant ledger — confirmed by the owner, NOT yet landed in code.**
+
+| invariant | lands as |
+| --- | --- |
+| Same diagnosis code + type never repeats within a stay | `distinct()` in `process_pmsi()`; key `PATID+EVTID+ELTID+type_diag+diag` |
+| `ELTID + CODEACTE` is the acts key; activité 1/4 duplicates are deduped | `distinct()` + assert; replaces the positional `source_row_id` |
+| `PATID`/`EVTID`/`ELTID` are always character, normalised at extraction | `stopifnot()` at the boundary; factor/integer64/numeric branches in `sources.R:56-80` die |
+| One analyte code per biology result row — never a list, never two | list-flattening dies, with the invented fixture at `test-process-biol.R:84` |
+| One `RECTYPE` per document | collapse-with-`;` branch in `doceds.R:55-60` dies |
+| Dates are standardised at extraction (source format not known) | one parse at the boundary + assert; a real run names the format |
+| Legacy `BIOL_ID`/`VIRO_ID` artifacts are obsolete | `.edsan_canonicalize_eltid()` and three test files die |
+| Single user; breakage is noticed immediately | hard `stopifnot()` is licensed throughout |
+
+Architectural invariant running through the owner's answers, worth stating
+plainly: **redsan normalises at the extraction boundary, once, and nothing
+downstream re-normalises.**
+
+**Open questions.**
+
+- `ELTID + CODEACTE` alone collapses the same act performed on *different days*
+  within one stay — dialysis, transfusion, radiotherapy sessions would
+  undercount. `ELTID + CODEACTE + DATEACTE` still dedupes activité 1/4 (same day
+  by construction) while keeping genuine repeats; same-day repeats still
+  collapse. Owner has not ruled on the refinement.
+- Do DW-source PMSI entries carry `DALL`/`CODEACTE` payloads?
+- Do the CCAM/CDAM/CSARR/NGAP code spaces collide on `CODEACTE`?
+- Should redsan fetch the biology status/CR column so that "attempted and
+  failed" stops being indistinguishable from "never ordered"?
+- redsan has no `HANDOFF.md`. This entry is the only written record of invariants
+  that constrain *that* repo, and it will drift until they land there as asserts
+  and roxygen. That landing was agreed in principle and not yet done.
+
+**Files changed.** This entry only.
