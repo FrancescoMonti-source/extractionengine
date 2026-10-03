@@ -23,6 +23,10 @@ FACT_PROTO <- list(
   # these, never the words they came from.
   span_lo = double(), span_hi = double(),
   negated = logical(), hypothetical = logical(), historical = logical(), family = logical(),
+  # For a condition: "active" or "stable" when the record says which, and when
+  # it began relative to admission ("before_admission", "at_admission",
+  # "during_stay", "unknown"). NA when the producer cannot tell.
+  activity = character(), onset = character(),
   # Who made the statement: "record" (the document says it), "dietitian",
   # "coder", or "model" (a judgement the model made, not one it read).
   asserted_by = character(),
@@ -175,24 +179,28 @@ facts_biology <- function(bundle, stay) {
   )))
 }
 
-# Closed-list concepts as ICD-10 sets. Built only for the concepts this study
-# asks about. E40-E46 are never read: they are the code under audit.
+# Closed-list concepts as ICD-10 sets, under the same names the model producer
+# uses (atomic.R). Built only for the concepts this study asks about. E40-E46
+# are never read: they are the code under audit. A code is a condition managed
+# during the stay, so its activity is "active"; the code itself is the stage
+# when it carries one (N18.4, N18.5).
 ICD10_SETS <- c(
   sepsis = "^(A4[01]|R572|R651)",
-  dka = "^E1[0-4][01]",
-  long_course_infection = "^(I33|M86|M46[2-5]|M00|T845)",
-  cancer_active = "^C[0-9]",
+  diabetic_crisis = "^E1[0-4][01]",
+  deep_infection = "^(I33|M86|M46[2-5]|M00|T845)",
+  malignancy = "^C[0-9]",
   dialysis = "^(Z992|Z49)",
-  ckd_4_5 = "^N18[45]",
+  chronic_kidney_disease = "^N18[45]",
   cirrhosis = "^(K703|K717|K74[456])",
-  tuberculosis = "^A1[5-9]",
-  chronic_resp_failure = "^J961",
-  # Recorded so a reader sees them, and read by no rule: a heart failure
-  # without its stage, a stroke and a pancreatitis without its severity do not
-  # establish the aggression on the closed list.
+  chronic_infection = "^A1[5-9]",
+  # Recorded so a reader sees them, and read by no rule: a chronic respiratory
+  # failure without long-term oxygen, a heart failure without its stage, a
+  # stroke and a pancreatitis without its severity do not establish the
+  # aggression on the closed list.
+  chronic_respiratory_failure = "^J961",
   heart_failure = "^I50",
   stroke = "^I6[134]",
-  pancreatitis = "^K85"
+  acute_pancreatitis = "^K85"
 )
 
 # Major surgery from the CCAM label, the same move as albumin: a label
@@ -217,7 +225,7 @@ facts_pmsi <- function(bundle, stay) {
       parts[[length(parts) + 1L]] <- list(
         facts = facts_frame(
           fact_id = ids, PATID = stay$PATID, EVTID = stay$EVTID, concept = concept,
-          value_chr = code[rows], record_date = as.Date(dg$DATSORT[rows]),
+          value_chr = code[rows], record_date = as.Date(dg$DATSORT[rows]), activity = "active",
           asserted_by = "coder", derivation = "measured", source = "pmsi_diag",
           producer = "pmsi-icd10-sets", producer_version = "proto-1", note = dg$type_diag[rows]
         ),
@@ -472,12 +480,13 @@ facts_lexicon <- function(stay, index, docs_type) {
       family = grepl(FAMILY, before, perl = TRUE)
     )
     value <- switch(concept,
-      nyha_class = unname(ROMAN[sub("^.*?(iv|iii|ii|i|[1-4])\\b.*$", "\\1", hit, perl = TRUE)]),
+      nyha_class = paste("NYHA", unname(ROMAN[sub("^.*?(iv|iii|ii|i|[1-4])\\b.*$", "\\1", hit, perl = TRUE)])),
       sepsis = ifelse(grepl("choc", hit), "septic_shock", "sepsis"),
       antituberculous_drug = hit,
       concept
     )
-    emit(rows, concept, value, qual)
+    # A NYHA class is the stage of a heart failure, filed where the model files it.
+    emit(rows, if (concept == "nyha_class") "heart_failure" else concept, value, qual)
   }
   # The dietitian's box: a clinician's judgement, written in the record, and
   # recorded as hers. The CORA fiche prints a ticked box as
@@ -499,8 +508,8 @@ facts_lexicon <- function(stay, index, docs_type) {
 # ---------------------------------------------------------------------------
 
 STAGE_CLAIMS <- c(
-  nyha_class = "nyha\\W{0,12}(?:classe|stade)?\\W{0,3}(iv|iii|3|4)\\b|(?:classe|stade)\\W{0,3}(iv|iii|3|4)\\W{0,8}(?:de la |de )?nyha",
-  gold_stage = "\\bgold\\W{0,6}(3|4|iii|iv)\\b"
+  heart_failure = "nyha\\W{0,12}(?:classe|stade)?\\W{0,3}(iv|iii|3|4)\\b|(?:classe|stade)\\W{0,3}(iv|iii|3|4)\\W{0,8}(?:de la |de )?nyha",
+  copd = "\\bgold\\W{0,6}(3|4|iii|iv)\\b"
 )
 
 facts_stage_claims <- function(run, stay, producer) {
@@ -512,13 +521,13 @@ facts_stage_claims <- function(run, stay, producer) {
     for (concept in names(STAGE_CLAIMS)) {
       if (!grepl(STAGE_CLAIMS[[concept]], why, perl = TRUE)) next
       stage <- regmatches(why, regexpr(STAGE_CLAIMS[[concept]], why, perl = TRUE))
-      token <- if (concept == "nyha_class") "nyha" else "gold"
+      token <- if (concept == "heart_failure") "nyha" else "gold"
       ok <- any(grepl(STAGE_CLAIMS[[concept]], quotes, perl = TRUE))
       id <- new_ids(1L)
       parts[[length(parts) + 1L]] <- list(
         facts = facts_frame(
           fact_id = id, PATID = stay$PATID, EVTID = stay$EVTID, concept = concept,
-          value_chr = unname(ROMAN[sub("^.*?(iv|iii|3|4)\\b.*$", "\\1", stage, perl = TRUE)]),
+          value_chr = stage,
           derivation = "stated", source = "doceds", producer = producer,
           producer_version = paste(unique(run$assessments$model)),
           status = if (ok) "kept" else "refused",

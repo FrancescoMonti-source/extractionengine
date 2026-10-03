@@ -19,7 +19,7 @@ dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 # artifact is installed on this machine; the fragments do not depend on it.
 assignInNamespace("doceds_onnx_spec", function(model_dir = NULL) list(package = "redsan", digest = NA_character_), ns = "redsan")
 pkgload::load_all(src, export_all = TRUE, helpers = FALSE, quiet = TRUE)
-for (f in c("facts.R", "rules.R", "grid.R")) source(file.path(here, f))
+for (f in c("facts.R", "rules.R", "grid.R", "atomic.R")) source(file.path(here, f))
 
 source(file.path(od, "aggression-b1-batch-ids-20261001.R"))
 corpus <- readRDS(file.path(datasets, "denut_trimmed_v1.2.0_fiche_cora_2026-09-23.rds"))
@@ -58,6 +58,11 @@ n_of <- setNames(seq_along(batch_ids), batch_ids)
 
 stays <- do.call(rbind, lapply(bundles, stay_of))
 DEMO <- c("luna-r2-rationale", "bonsai-rationale")
+# Atomic facts from the local model, when extract_atomic.R has run.
+atomic_path <- file.path(out_dir, "atomic-bonsai-64.rds")
+atomic <- if (file.exists(atomic_path)) readRDS(atomic_path) else NULL
+MODEL <- c("bonsai-atomic", "rule:duration_days")
+DETERMINISTIC <- c("lexicon", "pmsi-icd10-sets", "ccam-label-selector")
 parts <- list()
 for (id in batch_ids) {
   b <- bundles[[id]]
@@ -73,6 +78,12 @@ for (id in batch_ids) {
     facts_lexicon(stay, input$index, docs_type),
     facts_stage_claims(luna, stay, DEMO[[1L]]), facts_stage_claims(bonsai, stay, DEMO[[2L]])
   ))
+  response <- atomic$stays[[id]]$response
+  if (!is.null(response)) {
+    parts <- c(parts, list(facts_atomic(response, stay,
+      input$index[startsWith(input$index$prompt_record_id, "DOC-"), ], MODEL[[1L]],
+      paste(atomic$identity$model, substr(atomic$identity$question_digest, 1, 8)))))
+  }
 }
 built <- bind_parts(parts)
 derived <- bind_parts(lapply(batch_ids, function(id) derive_kg_floors(built$facts, stays[stays$EVTID == id, ])))
@@ -109,18 +120,22 @@ grounds <- function(id, seen = character()) {
 # --- the grid, twice ----------------------------------------------------------
 
 kept <- facts[facts$status == "kept" & !facts$producer %in% DEMO, ]
-run_grid <- function(grid, variant) {
+run_grid <- function(grid, variant, f = kept) {
   crit <- list()
   verd <- list()
   for (id in batch_ids) {
-    c1 <- evaluate_band(grid, stays[stays$EVTID == id, ], kept[kept$EVTID == id, ])
+    c1 <- evaluate_band(grid, stays[stays$EVTID == id, ], f[f$EVTID == id, ])
     crit[[id]] <- cbind(variant = variant, c1, stringsAsFactors = FALSE)
     verd[[id]] <- cbind(variant = variant, verdict(c1), stringsAsFactors = FALSE)
   }
   list(criteria = do.call(rbind, crit), verdicts = do.call(rbind, verd))
 }
 A <- run_grid(has_grid(), "judged")
-B <- run_grid(has_grid(aggression = aggression_from_facts), "facts")
+# The same aggression rule over three sets of producers: the deterministic ones,
+# the model's atomic facts, and both.
+B <- run_grid(has_grid(aggression = aggression_from_facts), "facts", kept[!kept$producer %in% MODEL, ])
+C <- run_grid(has_grid(aggression = aggression_from_facts), "model facts", kept[!kept$producer %in% DETERMINISTIC, ])
+D <- run_grid(has_grid(aggression = aggression_from_facts), "all facts", kept)
 
 decided <- A$criteria[A$criteria$state != "unknown", ]
 used <- unique(unlist(strsplit(decided$facts[nzchar(decided$facts)], ",")))
@@ -167,70 +182,110 @@ agg_of <- function(x, ids) {
   r <- x$criteria[x$criteria$EVTID %in% ids & endsWith(x$criteria$criterion, "aggression"), ]
   r$assessment[match(ids, r$EVTID)]
 }
-branch <- vapply(batch_ids, function(id) {
-  ctx <- list(stay = stays[stays$EVTID == id, ], facts = kept[kept$EVTID == id, ], path = "etiologic.aggression")
-  hits <- vapply(aggression_branches, function(b) evaluate(b, ctx)$state, "")
-  if (any(hits == "met")) paste(names(hits)[hits == "met"], collapse = "+") else "none"
-}, "")
+state_of <- function(V) {
+  V$criteria$state[match(paste0(batch_ids, "etiologic.aggression"),
+    paste0(V$criteria$EVTID, sub("^[^.]+[.]", "", V$criteria$criterion)))]
+}
+branch_of <- function(f) {
+  vapply(batch_ids, function(id) {
+    ctx <- list(stay = stays[stays$EVTID == id, ], facts = f[f$EVTID == id, ], path = "etiologic.aggression")
+    hits <- vapply(aggression_branches, function(b) evaluate(b, ctx)$state, "")
+    if (any(hits == "met")) paste(names(hits)[hits == "met"], collapse = "+") else "none"
+  }, "")
+}
 box <- vapply(batch_ids, function(id) any(kept$EVTID == id & kept$concept == "box:aggression"), NA)
 agg <- data.frame(
   EVTID = batch_ids, n = seq_along(batch_ids), group = group_of[batch_ids],
   luna = agg_of(luna, batch_ids), bonsai = agg_of(bonsai, batch_ids),
-  facts = B$criteria$state[match(paste0(batch_ids, "etiologic.aggression"),
-    paste0(B$criteria$EVTID, sub("^[^.]+[.]", "", B$criteria$criterion)))],
-  branch = branch, box = box, stringsAsFactors = FALSE
+  facts = state_of(B), branch = branch_of(kept[!kept$producer %in% MODEL, ]),
+  model = state_of(C), model_branch = branch_of(kept[!kept$producer %in% DETERMINISTIC, ]),
+  all = state_of(D), box = box, stringsAsFactors = FALSE
 )
 say("")
-say("AGGRESSION FROM FACTS (deterministic producers only)")
+say("AGGRESSION: judged by a model, or one rule over facts from three sets of producers")
+say("  luna and bonsai judge; 'facts' = regex + PMSI; 'model' = the local model's atomic facts; 'all' = both")
 for (g in names(batch)) {
   s <- agg[agg$group == g, ]
-  say(sprintf("  %-16s n=%2d | luna: %s | bonsai: %s | facts: %s | branches: %s | dietitian box ticked: %d",
-    g, nrow(s), tab(s$luna), tab(s$bonsai), tab(s$facts), tab(s$branch[s$branch != "none"]), sum(s$box)))
+  say(sprintf("  %-16s n=%2d | luna: %s | bonsai: %s | facts: %s | model: %s | all: %s | box ticked: %d",
+    g, nrow(s), tab(s$luna), tab(s$bonsai), tab(s$facts), tab(s$model), tab(s$all), sum(s$box)))
 }
-src_of <- function(concepts) {
-  x <- kept[kept$concept %in% concepts, ]
+say("  branches met, facts: ", tab(agg$branch[agg$branch != "none"]),
+  " | model: ", tab(agg$model_branch[agg$model_branch != "none"]))
+say("  same model, judging (bonsai) against extracting (model): ", tab(paste(agg$bonsai, "->", agg$model)))
+say("  facts against model: ", tab(paste(agg$facts, "->", agg$model)))
+say("  box ticked: facts met ", sum(agg$box & agg$facts == "met"), ", model met ", sum(agg$box & agg$model == "met"),
+  " of ", sum(agg$box), " | box absent: model met ", sum(!agg$box & agg$model == "met"), " of ", sum(!agg$box))
+src_of <- function(concepts, f = kept) {
+  x <- f[f$concept %in% concepts, ]
   tab(paste(x$concept, x$source))
 }
-say("  closed-list facts by concept and source: ", src_of(c(names(ICD10_SETS), "major_surgery", names(LEXICON))))
+say("  closed-list facts by concept and source (deterministic): ",
+  src_of(c(names(ICD10_SETS), "major_surgery", names(LEXICON)), kept[kept$producer %in% DETERMINISTIC, ]))
 say("  albumin facts by analyte code: ", tab(paste(facts$value_chr, facts$status)[facts$concept == "albumin"]))
 say("  albumin label predicate over all 779 stays, by code and unit: ",
   paste(names(albumin_codes), albumin_codes, sep = ": ", collapse = " | "))
-say("  box ticked and facts met: ", sum(agg$box & agg$facts == "met"), " | box ticked and facts unknown: ",
-  sum(agg$box & agg$facts != "met"), " | box absent and facts met: ", sum(!agg$box & agg$facts == "met"))
-
-vb <- B$verdicts[match(batch_ids, B$verdicts$EVTID), ]
+va_ <- function(V) V$verdicts[match(batch_ids, V$verdicts$EVTID), ]
+vb <- va_(B)
+vc <- va_(C)
+vd <- va_(D)
 say("  diagnosis judged -> facts: ", tab(paste(va$diagnosis, "->", vb$diagnosis)))
-say("  bonsai (final text) against facts: ", tab(paste(agg$bonsai, "|", agg$facts)))
+say("  diagnosis judged -> model: ", tab(paste(va$diagnosis, "->", vc$diagnosis)))
 say("  computed and structured criteria equal to luna: ",
   sum(m$state == m$assessment & !sub("^[^.]+[.]", "", m$criterion) %in% NARRATIVE), " of ",
   sum(!sub("^[^.]+[.]", "", m$criterion) %in% NARRATIVE))
+
+if (!is.null(atomic)) {
+  mf <- facts[facts$producer == MODEL[[1L]], ]
+  done <- vapply(atomic$stays, function(s) !is.null(s$response), NA)
+  secs <- vapply(atomic$stays, `[[`, 1, "seconds")
+  say("")
+  say("MODEL FACTS (", atomic$identity$model, ", question ", substr(atomic$identity$question_digest, 1, 8), ")")
+  say("  stays answered ", sum(done), " of ", length(batch_ids), " | failed ", sum(!done),
+    " | seconds median ", round(median(secs)), ", total h ", round(sum(secs) / 3600, 1))
+  per <- table(factor(mf$EVTID, levels = batch_ids))
+  say("  facts per stay: median ", median(per), ", max ", max(per), " | kept ", sum(mf$status == "kept"),
+    " | refused ", sum(mf$status == "refused"))
+  say("  refusal reasons: ", tab(mf$reason[mf$status == "refused"]))
+  say("  concepts (kept): ", tab(mf$concept[mf$status == "kept"]))
+  say("  status (kept): ", tab(ifelse(mf$negated, "excluded", ifelse(mf$hypothetical, "suspected",
+    ifelse(mf$historical, "history", ifelse(mf$family, "family", mf$activity))))[mf$status == "kept"]))
+  say("  onset (kept, acute concepts): ", tab(mf$onset[mf$status == "kept" & mf$concept %in% ATOMIC_CONCEPTS[1:12]]))
+  staged <- mf[!is.na(mf$value_chr), ]
+  say("  facts carrying a stage: ", nrow(staged), " | ", tab(paste(staged$concept, staged$status)))
+  ab <- facts[facts$producer == "rule:duration_days", ]
+  say("  planned anti-infective courses: ", nrow(ab), " | of 21 days or more ", sum(ab$value >= 21, na.rm = TRUE))
+}
 
 # --- Francesco's review: only `decision` is his judgement ---------------------
 
 rv <- review[as.character(review$EVTID) %in% batch_ids, ]
 dec <- vapply(batch_ids, function(id) paste(sort(unique(rv$decision[as.character(rv$EVTID) == id])), collapse = "+"), "")
 say("")
-say("REVIEW DECISION (Francesco, 2026-09-12) against the grid, per stay")
+say("REVIEW DECISION (Francesco, 2026-09-12) against the grid's diagnosis, per stay")
 say("  decisions: ", tab(dec))
-say("  judged aggression: ", tab(paste(dec, "|", va$diagnosis)))
-say("  aggression from facts: ", tab(paste(dec, "|", vb$diagnosis)))
+say("  aggression judged (luna): ", tab(paste(dec, "|", va$diagnosis)))
+say("  aggression from facts:    ", tab(paste(dec, "|", vb$diagnosis)))
+say("  aggression from model:    ", tab(paste(dec, "|", vc$diagnosis)))
+say("  aggression from all:      ", tab(paste(dec, "|", vd$diagnosis)))
+bd <- bonsai$assessments$diagnosis[match(batch_ids, bonsai$assessments$EVTID)]
+say("  bonsai's own pass:        ", tab(paste(dec, "|", bd)))
 
 # --- an invented stage --------------------------------------------------------
 
 st <- facts[facts$producer %in% DEMO, ]
 say("")
 say("STAGES NAMED IN AGGRESSION RATIONALES, read as facts and grounded")
-say("  ", if (nrow(st)) tab(paste(st$producer, st$concept, st$value_chr, st$status)) else "none")
+say("  ", if (nrow(st)) tab(paste(st$producer, st$concept, st$status)) else "none")
 if (any(st$status == "refused")) say("  reasons: ", tab(st$reason[st$status == "refused"]))
 nyha_text <- vapply(batch_ids, function(id) {
-  any(kept$EVTID == id & kept$concept == "nyha_class" & kept$producer == "lexicon")
+  any(kept$EVTID == id & kept$concept == "heart_failure" & kept$producer == "lexicon")
 }, NA)
 say("  stays whose documents state a NYHA class (lexicon): ", sum(nyha_text),
   " | stays with a refused stage claim among them: ", sum(nyha_text[unique(st$EVTID[st$status == "refused"])]))
 for (id in unique(st$EVTID)) {
   s <- agg[agg$EVTID == id, ]
-  say(sprintf("  stay #%d (%s): bonsai aggression %s | from facts %s (%s) | luna %s",
-    s$n, s$group, s$bonsai, s$facts, s$branch, s$luna))
+  say(sprintf("  stay #%d (%s): bonsai judged %s | model facts %s (%s) | regex+PMSI %s | luna %s",
+    s$n, s$group, s$bonsai, s$model, s$model_branch, s$facts, s$luna))
 }
 
 # --- silence ------------------------------------------------------------------
@@ -256,9 +311,9 @@ say("  stays with an anti-tuberculous drug fact: ", sum(tb), " | luna's aggressi
 for (id in batch_ids[tb]) {
   s <- agg[agg$EVTID == id, ]
   d <- kept[kept$EVTID == id & kept$concept == "antituberculous_drug", ]
-  say(sprintf("  stay #%d (%s): %d drug facts (%s) | historical %d, negated %d | from facts %s (%s) | luna names it %s | bonsai %s",
+  say(sprintf("  stay #%d (%s): %d drug facts (%s) | historical %d, negated %d | regex+PMSI %s (%s) | model facts %s (%s) | luna names it %s | bonsai judged %s",
     s$n, s$group, nrow(d), paste(sort(unique(d$value_chr)), collapse = "+"), sum(d$historical), sum(d$negated),
-    s$facts, s$branch, tb_why[[id]], s$bonsai))
+    s$facts, s$branch, s$model, s$model_branch, tb_why[[id]], s$bonsai))
 }
 
 # The child band never runs on this batch. Synthetic facts, no patient: does it
@@ -288,7 +343,8 @@ say("SIZE (non-blank, non-comment lines): grid.R ", code_lines(file.path(here, "
 # --- outputs ------------------------------------------------------------------
 
 saveRDS(list(stays = stays, facts = facts, evidence = evidence, judged = A, from_facts = B,
-  aggression = agg, review_decision = dec, luna_vs_grid = m), file.path(out_dir, "fact-layer-64.rds"))
+  from_model_facts = C, from_all_facts = D, aggression = agg, review_decision = dec, luna_vs_grid = m),
+  file.path(out_dir, "fact-layer-64.rds"))
 writeLines(iconv(log, "UTF-8", "ASCII//TRANSLIT"), file.path(out_dir, "summary.log"))
 
 # A report for a reader on this machine: identifiers and quotes.
@@ -322,9 +378,11 @@ for (id in batch_ids) {
     sprintf("review decision: %s", dec[[id]]),
     sprintf("luna:            %s / %s", la$diagnosis[la$EVTID == id], la$severity[la$EVTID == id]),
     sprintf("grid, judged:    %s / %s", va$diagnosis[va$EVTID == id], va$severity[va$EVTID == id]),
-    sprintf("grid, facts:     %s / %s   aggression from facts: %s (%s); dietitian box: %s; bonsai: %s",
+    sprintf("grid, facts:     %s / %s   aggression from regex+PMSI: %s (%s); dietitian box: %s; bonsai judged: %s",
       vb$diagnosis[vb$EVTID == id], vb$severity[vb$EVTID == id], a$facts, a$branch,
-      if (a$box) "ticked" else "-", a$bonsai))
+      if (a$box) "ticked" else "-", a$bonsai),
+    sprintf("grid, model:     %s / %s   aggression from the model's facts: %s (%s)",
+      vc$diagnosis[vc$EVTID == id], vc$severity[vc$EVTID == id], a$model, a$model_branch))
   cr <- A$criteria[A$criteria$EVTID == id, ]
   for (i in seq_len(nrow(cr))) {
     report <- c(report, sprintf("  %-22s %s", sub("^[^.]+[.]", "", cr$criterion[[i]]), cr$state[[i]]))
@@ -332,7 +390,8 @@ for (id in batch_ids) {
       for (fid in strsplit(cr$facts[[i]], ",")[[1L]]) report <- c(report, explain(fid))
     }
   }
-  closed <- kept[kept$EVTID == id & kept$concept %in% c(names(ICD10_SETS), "major_surgery", names(LEXICON), "box:aggression"), ]
+  closed <- kept[kept$EVTID == id & kept$concept %in% c(ATOMIC_CONCEPTS, names(ICD10_SETS), "major_surgery",
+    "antituberculous_drug", "antibiotic_course", "box:aggression"), ]
   if (nrow(closed)) {
     report <- c(report, "  closed-list and box facts:")
     for (fid in closed$fact_id) report <- c(report, explain(fid))

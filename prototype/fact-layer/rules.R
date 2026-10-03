@@ -153,11 +153,12 @@ all_of <- function(...) {
 has <- function(concepts, where = NULL, at_least = 1L, distinct = NULL) {
   where <- substitute(where)
   distinct <- substitute(distinct)
+  env <- parent.frame()
   criterion(function(ctx) {
     f <- ctx$facts
     x <- f[f$concept %in% concepts & !f$negated & !f$hypothetical & !f$family, , drop = FALSE]
-    if (!is.null(where) && nrow(x)) x <- x[eval(where, x, baseenv()) %in% TRUE, , drop = FALSE]
-    k <- if (is.null(distinct)) nrow(x) else length(unique(eval(distinct, x, baseenv())))
+    if (!is.null(where) && nrow(x)) x <- x[eval(where, x, env) %in% TRUE, , drop = FALSE]
+    k <- if (is.null(distinct)) nrow(x) else length(unique(eval(distinct, x, env)))
     if (nrow(x) && k >= at_least) answer("met", x$fact_id) else answer("unknown")
   })
 }

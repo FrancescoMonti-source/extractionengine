@@ -72,18 +72,30 @@ verdict <- function(criteria) {
     severity_unresolved = if (any(open)) paste(criteria$criterion[open], collapse = ", ") else NA_character_)
 }
 
-# The aggression criterion as the closed list of 2026-10-01, over facts instead
-# of asked of a model, as far as this prototype's producers reach. Absent on
-# purpose: the dietitian's box (never enough alone), a heart failure without its
-# stage, a stroke, a pancreatitis without its severity, and any CRP. A single
-# rifampicin is no regimen: it also treats a staphylococcal bone infection for
-# weeks, or a cholestatic itch, and only a duration fact could say which.
+# The aggression criterion as the closed list of 2026-10-01, over facts from any
+# producer. Absent on purpose: the dietitian's box (never enough alone), a
+# stroke, a simple infection, a fracture, a metabolic disorder, a stage the
+# record does not write, and any CRP. A single rifampicin is no regimen: it also
+# treats a staphylococcal bone infection for weeks, or a cholestatic itch.
+nyha_3_4 <- function(s) grepl("(nyha|classe|stade)\\W{0,6}(iii|iv|3|4)\\b", fold(s))
+gold_3_4 <- function(s) grepl("gold\\W{0,6}(3|4|iii|iv)\\b|severe", fold(s))
+not_invasive <- function(s) grepl("\\bp?ta\\b|\\bp?tis\\b|in situ|\\bcis\\b|non infiltrant|bowen", fold(s))
+ckd_4_5 <- function(s) {
+  gfr <- suppressWarnings(as.numeric(sub(",", ".", sub(
+    "^.*?(dfg|clairance|filtration|mdrd|ckd.?epi)\\D{0,20}?([0-9]+([.,][0-9]+)?).*$", "\\2", fold(s), perl = TRUE))))
+  grepl("^n18[45]|stade\\W{0,6}(4|5|iv|v)\\b|<\\s*30", fold(s)) | (gfr < 30) %in% TRUE
+}
 aggression_branches <- list(
-  acute     = any_of(has("sepsis", !historical), has("major_surgery"), has("dka"),
-                     has("long_course_infection")),
-  chronic   = any_of(has("nyha_class", value_chr %in% c("III", "IV")), has(c("dialysis", "ckd_4_5")),
-                     has("cirrhosis"), has("chronic_resp_failure"), has("tuberculosis"),
+  acute     = any_of(has(c("sepsis", "icu_organ_failure", "major_surgery", "major_trauma_or_burn",
+                           "severe_pancreatitis", "diabetic_crisis", "deep_infection"),
+                         !historical & !onset %in% "during_stay"),
+                     has("antibiotic_course", value >= 21 & !historical)),  # "plusieurs semaines": 3+
+  chronic   = any_of(has("heart_failure", nyha_3_4(value_chr)), has("copd", gold_3_4(value_chr)),
+                     has("chronic_kidney_disease", ckd_4_5(value_chr)),
+                     has(c("cardiac_cachexia", "repeated_hf_decompensation", "home_oxygen_or_niv",
+                           "dialysis", "cirrhosis"), !historical),
+                     has(c("chronic_inflammatory_disease", "chronic_infection"), activity %in% "active"),
                      has("antituberculous_drug", !historical, at_least = 2, distinct = value_chr)),
-  malignant = has("cancer_active")
+  malignant = has("malignancy", !historical & !not_invasive(value_chr))
 )
 aggression_from_facts <- do.call(any_of, aggression_branches)
