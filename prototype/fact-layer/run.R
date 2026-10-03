@@ -42,6 +42,10 @@ review <- readxl::read_excel(file.path(datasets, "denut-revue-codage-2026-09-12.
 
 log <- character()
 say <- function(...) log <<- c(log, paste0(...))
+git <- function(...) system2("git", c("-C", shQuote(here), ...), stdout = TRUE)
+say("RUN ", format(Sys.time(), "%Y-%m-%d %H:%M"), " | prototype commit ", substr(git("rev-parse", "HEAD"), 1, 7),
+  " | tree clean ", !length(git("status", "--porcelain", "--", "."))," | luna run ",
+  unique(luna$assessments$run_label), " | redsancoding source ", basename(src))
 tab <- function(x) {
   t <- table(x, useNA = "ifany")
   paste(sprintf("%s=%d", names(t), as.integer(t)), collapse = ", ")
