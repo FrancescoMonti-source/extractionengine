@@ -473,12 +473,16 @@ facts_lexicon <- function(stay, index, docs_type) {
     before <- substr(text[rows], pmax(1L, m[rows] - 60L), m[rows] - 1L)
     before <- sub("^.*[.;:!]", "", before)
     after <- substr(text[rows], m[rows] + attr(m, "match.length")[rows], m[rows] + attr(m, "match.length")[rows] + 12L)
-    # A year older than the admission near the match dates the mention to the
-    # past: "sepsis sur materiel en 2018" is history, whatever words surround it.
+    # A year older than the admission dates the mention to the past: "sepsis sur
+    # materiel en 2018" is history, whatever words surround it. The year counts
+    # when it sits near the match, or when it is the only kind of year the
+    # fragment holds: a fragment that dates itself only to the past is about it.
     near <- substr(text[rows], pmax(1L, m[rows] - 80L), m[rows] + attr(m, "match.length")[rows] + 80L)
     admitted <- as.integer(format(stay$admission, "%Y"))
-    dated_before <- vapply(regmatches(near, gregexpr("\\b(19|20)[0-9]{2}\\b", near, perl = TRUE)),
-      function(y) !is.na(admitted) && length(y) > 0L && any(as.integer(y) < admitted), NA)
+    years_in <- function(s) lapply(regmatches(s, gregexpr("\\b(19|20)[0-9]{2}\\b", s, perl = TRUE)), as.integer)
+    old_near <- vapply(years_in(near), function(y) any(y < admitted), NA)
+    only_old <- vapply(years_in(text[rows]), function(y) length(y) > 0L && all(y < admitted), NA)
+    dated_before <- !is.na(admitted) & (old_near | only_old)
     qual <- list(
       negated = grepl(NEGATION, before, perl = TRUE),
       hypothetical = grepl(HYPOTHESIS, before, perl = TRUE) | grepl("^[^.]{0,6}\\?", after, perl = TRUE),
