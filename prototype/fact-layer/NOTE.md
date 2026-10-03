@@ -13,7 +13,7 @@ decisions, for a reader on this machine.
 
 ## The answer
 
-**Yes, on everything this batch can test.**
+**Yes, with two conditions.**
 
 `grid.R` writes the whole grid in 75 lines of code: the three bands, the
 verdict, and the aggression closed list. Run over the facts the luna run
@@ -24,17 +24,32 @@ facts a decision rests on resolves to a quote or a source row.
 The experiment used the same local model, the same documents and the same
 settings throughout. Asked to judge, the model found aggression in 23 of the 61
 stays it answered; its pass failed on the other 3. Asked only to list facts,
-with R applying the closed list, it found aggression in 23 of 64 and lost no
-stay. The two methods agree on 45 of the 61 stays both answered. Against your
-review, they support about as many of your 48 "Justifiable" stays: 17 for
-judging and 15 for extracting. Each supports 2 of your 8 "Non justifiable"
-stays. Extracting lost nothing measurable against judging. In exchange, every
-answer now names its branch and the quoted facts behind it.
+with R applying the closed list, it also found aggression in 23 stays. The two
+methods agree on 45 of the 61 stays both answered. In exchange, every answer now
+names its branch and the quoted facts behind it.
 
-One thing is not settled: both methods remain far from your review, at 15 to 17
-of 48. Either the closed list is stricter than the standard you reviewed by on
-2026-09-12, or the 27B model misses facts. The counts cannot tell which;
-`report.txt` can, stay by stay.
+**Two conditions**, from a review of the stays by the redsan-coding session,
+which I checked against these files:
+
+1. **An empty list is a failure, not a finding.** On stay #13 the model
+   reasoned for about 2,000 tokens and returned no fact. That stay is the
+   clearest acute aggression among the nutritionist's cases: diabetes revealed
+   by a ketoacidosis, a bacteraemia, intensive care. It was counted as answered,
+   which repeats exactly the silence DENUT could not see. A stay with documents
+   and no fact must fail.
+2. **A category is a claim, like a stage.** Its word must be in what the fact
+   cites. A quarter of the model's facts cite fragments that never name their
+   category (below). The prototype computed this only on the side; it belongs in
+   the contract.
+
+**What this batch cannot measure is recall against your review.** All 64 stays
+were picked because luna judged aggression met, and 41 because that aggression
+was doubtful: the strokes and the grey infections. Your "Justifiable" decisions
+date from 12 September, before your ruling of 2 October that sends those cases
+to the TIM. And reduced intake stayed unknown on 62 of the 64, so a stay you
+judged justifiable may rest on intake, which nothing here reads. "15 of 48" is
+therefore not a recall figure. The stays worth reading are the 13 nutritionist
+cases and the 10 controls, where aggression was expected to hold.
 
 ## The shape, from zero
 
@@ -118,19 +133,20 @@ only be argued with. A fact that disagrees can be checked against its quote.
 
 **Where the model errs now: filing.** A crude screen asks whether the fragments
 a fact cites contain any word of its category. For 73 of 284 facts they do not.
-The word lists were written without reading a document, so many of these are the
-lists' fault. One category stands out: 6 of 8 "diabetic crisis" facts never say
-acidocétose, cétose or hyperosmolaire. They are most likely hyperglycaemias,
-which the list excludes, and one of them is what makes stay #2 meet the acute
-branch. Used as a guard, the screen cuts aggression from 23 stays to 18, and your
-supported stays from 15 to 13 Justifiable and from 2 to 1 Non justifiable.
-Inconclusive.
+The word lists were written without reading a document, so some of these are
+the lists' fault. One category stands out: 6 of 8 "diabetic crisis" facts never
+say acidocétose, cétose or hyperosmolaire. Read by the redsan-coding session,
+they are three type 2 diabetes named as a diagnosis, a severe hypoglycaemia
+(which the text excludes), a lactic acidosis, and a "déséquilibre du diabète".
+One of them is what makes stay #2 meet the acute branch. Used as a guard, the
+screen cuts aggression from 23 stays to 18.
 
-**A proposal that follows from it.** A category with a defining measurement
-should carry that measurement. The model would transcribe the pH, the
-bicarbonate or the osmolarity of a diabetic crisis, and R would threshold it, as
-it already does for a NYHA class. Choosing the category is the last judgement
-left to the model, and a measurement takes it away.
+**A measurement belongs to R, not to the model.** Both real ketoacidoses
+already have their blood gases in the bundle's biology table. The model's only
+job is to find the word "acidocétose"; R then reads pH and bicarbonate as
+structured facts, as it reads albumin. Where the gases are not in the bundle, as
+on stay #13, the word is the only evidence. Choosing the category is the last
+judgement left to the model; the word check and the lab facts take it away.
 
 ## The seven cases
 
@@ -144,17 +160,22 @@ left to the model, and a measurement takes it away.
   finds ethambutol, isoniazid and rifampicin, and the rule "two distinct
   anti-tuberculous drugs" meets the chronic branch. Bonsai's judgement said
   not_met. The model's own facts filed the infection as *suspected*, which does
-  not count. They filed the bladder tumour as an active malignancy, and the rule
-  counts it: its transcribed stage, three characters, reads as neither pTa nor in
-  situ, and the list keeps every invasive tumour. So the verdict is met either
-  way, for two different reasons. Here is my clinical reading: what drives
-  catabolism in this patient is a disseminated BCG infection treated for months,
-  not a bladder tumour under instillations. If that tumour is non-invasive, the
-  malignant branch is wrong by the list's own terms, and only the infection
-  should carry the verdict. The stage text is in `report.txt`. Only the fact
-  layer shows which reason carried the verdict. A lone rifampicin, on another
-  stay, meets nothing. It also treats a bone infection or a cholestatic itch, and
-  only a duration fact could tell which.
+  not count, and the bladder tumour as an active malignancy staged pT1, which
+  does. Both are wrong. The pT1 is the stage of the first tumour; the later
+  recurrence was in situ, under maintenance BCG, with a negative recent
+  cystoscopy, which the list excludes. The "suspected" comes from a question mark
+  in the admission note, while the discharge letter confirms the BCGitis and the
+  triple therapy started during the stay and continues at discharge. So the
+  verdict "met" is right, for the wrong reason, and only the fact layer shows it.
+  Two lessons. A status changes over a stay, so the latest document should
+  decide it. And an infection's rule should key on a weeks-long anti-infective
+  course having started, without asking for microbiological proof: BCG cultures
+  are often negative.
+- **A lone rifampicin is no tuberculosis marker.** On stay #13 it belongs to the
+  standard anti-staphylococcal relay. The fact should be an anti-infective course
+  with a start date and an end date, so that R computes its length. A course
+  written "jusqu'au" a date is an end date, which the current duration check
+  refuses because no duration is written.
 - **Vague time.** The eight weight-loss shapes become four concepts: `bmi`,
   `weight`, `height` and `weight_loss`. Each carries a reference role, a span and
   a negation flag. One thing does not fit a row: which two weights the record
@@ -179,10 +200,14 @@ left to the model, and a measurement takes it away.
   The experiment above retires that for aggression.
 - **Silence.** No rule can see a fact nobody extracted, so recall is checked
   beside the producers. Every stay's text writes a weight or a BMI with a
-  number, and luna left one stay with no anthropometric fact. The regex and PMSI
-  producers meet aggression on 4 stays where the model's facts do not, and the
-  model on 17 where they do not; together they meet it on 27. Two producers that
-  disagree point at what one of them missed.
+  number, and luna left one stay with no anthropometric fact. The model left
+  stay #13 with no fact at all, which is the first condition above. The regex
+  and PMSI producers meet aggression on 4 stays where the model's facts do not,
+  and the model on 17 where they do not. Two producers that disagree point at
+  what one of them missed. But the regex errs too: on stay #14 it read a sepsis
+  from years before as current, and that alone made the stay supported and
+  severe. A keyword producer needs the past-history flag as much as the model
+  does, and a year older than the admission should set it.
 
 ## Not tested
 
@@ -196,10 +221,10 @@ left to the model, and a measurement takes it away.
 
 ## The decision this leaves you
 
-Whether to make the fact table the engine's output contract. I recommend yes.
-The shape expressed the whole grid, kept every answer of the existing pipeline,
-and with a local model extracting, it judged aggression as well as that model
-judging directly. Each answer can now be traced to quoted facts, and each error
-can be seen for what it is: a misfiled category, a status, a refused stage.
-Before building it, read the disagreements in `report.txt`. They show how much of
-the gap to your review comes from the closed list and how much from the model.
+Whether to make the fact table the engine's output contract. I recommend yes,
+with the two conditions written into it: a stay with documents and no fact
+fails, and a category must be named in what its fact cites. The shape expressed
+the whole grid, kept every answer of the existing pipeline, and with a local
+model extracting, it judged aggression as often as that model judging directly.
+Each answer can now be traced to quoted facts, and each error can be seen for
+what it is: a misfiled category, a stale status, a refused stage.
