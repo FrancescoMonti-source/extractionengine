@@ -39,8 +39,10 @@ carries the ids of the facts that decided it.
 | file | what |
 | --- | --- |
 | `facts.R` | the fact shape and its producers |
+| `atomic.R` | a model producer: atomic aggression facts, stages and durations transcribed |
 | `rules.R` | the rule combinators: the part that would move into the engine |
 | `grid.R` | the grid as rules over facts: the page to put beside `denut_extraction_specs.R` |
+| `extract_atomic.R` | asks the local model for atomic facts on the 64 stays, with a checkpoint per stay |
 | `run.R` | builds the facts for the 64 test stays, evaluates the grid, compares |
 | `NOTE.md` | the answer |
 
@@ -54,10 +56,17 @@ luna run, and writes every output under
 New-Item -ItemType Directory -Force $env:TEMP\redsancoding-13c92ea | Out-Null
 git -C ..\redsan-coding archive 13c92ea | tar -x -C $env:TEMP\redsancoding-13c92ea
 $env:REDSANCODING_SRC = "$env:TEMP\redsancoding-13c92ea"
+# Optional, needs llama-server on localhost:8080 (about 2.6 h for the 64; resumes):
+Start-Process -FilePath "C:\Program Files\R\R-4.6.1\bin\Rscript.exe" `
+  -ArgumentList "prototype/fact-layer/extract_atomic.R", "all" `
+  -RedirectStandardOutput extract.out -RedirectStandardError extract.err -Wait -NoNewWindow
 Start-Process -FilePath "C:\Program Files\R\R-4.6.1\bin\Rscript.exe" `
   -ArgumentList "prototype/fact-layer/run.R" `
   -RedirectStandardOutput run.out -RedirectStandardError run.err -Wait -NoNewWindow
 ```
+
+Without the extraction's checkpoint, `run.R` evaluates every variant except the
+ones over the model's atomic facts.
 
 `run.R` stubs `redsan::doceds_onnx_spec()` for the session: the catalog
 records the trimmer's identity for audit only, no trimmer artifact is installed
@@ -71,10 +80,11 @@ Inputs, all local:
 
 - the corpus, `Documents/Datasets/denut/denut_trimmed_v1.2.0_fiche_cora_2026-09-23.rds`;
 - the luna run `gpt6-low-779-v120-fiche-cora-aggression-crp-20260929-r2.rds`;
-- the bonsai run `bonsai2-27b-budget2048-64-v120-fiche-cora-aggression-catabolism-20261002-s1.rds`,
-  for the invented stage only;
+- the bonsai run `bonsai2-27b-budget2048-64-v120-fiche-cora-aggression-catabolism-20261002-s1.rds`:
+  the same local model judging, beside which its extraction is compared;
 - the 64 stay ids in `aggression-b1-batch-ids-20261001.R`;
 - `redsancoding` source at `13c92ea`, exported with `git archive` and set in
   `REDSANCODING_SRC`. The installed build of 2026-09-23 predates the run.
 
-No model is called.
+The only model called is the local one, by `extract_atomic.R`. No document
+leaves the machine.
