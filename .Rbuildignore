@@ -7,3 +7,4 @@
 ^outputs$
 ^scripts$
 ^HANDOFF.*$
+^prototype$
