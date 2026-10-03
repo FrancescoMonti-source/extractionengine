@@ -123,22 +123,38 @@ grounds <- function(id, seen = character()) {
 # --- the grid, twice ----------------------------------------------------------
 
 kept <- facts[facts$status == "kept" & !facts$producer %in% DEMO, ]
-run_grid <- function(grid, variant, f = kept) {
+# A stay whose producer failed is not evaluated: its rules would read the
+# producer's silence as "nothing found", the one confusion the contract forbids.
+run_grid <- function(grid, variant, f = kept, failed = character()) {
   crit <- list()
   verd <- list()
   for (id in batch_ids) {
     c1 <- evaluate_band(grid, stays[stays$EVTID == id, ], f[f$EVTID == id, ])
+    v1 <- verdict(c1)
+    if (id %in% failed) {
+      c1$state[c1$criterion %in% grep("aggression$", c1$criterion, value = TRUE)] <- "failed"
+      v1[c("etiologic", "diagnosis")] <- "failed"
+      v1[c("severity", "severity_unresolved")] <- NA_character_
+    }
     crit[[id]] <- cbind(variant = variant, c1, stringsAsFactors = FALSE)
-    verd[[id]] <- cbind(variant = variant, verdict(c1), stringsAsFactors = FALSE)
+    verd[[id]] <- cbind(variant = variant, v1, stringsAsFactors = FALSE)
   }
   list(criteria = do.call(rbind, crit), verdicts = do.call(rbind, verd))
 }
+# Condition 1: a stay with documents and no fact from the model is a failure of
+# the producer, not a finding. Every stay here has documents.
+atomic_status <- vapply(batch_ids, function(id) {
+  s <- atomic$stays[[id]]
+  if (is.null(s$response)) "failed" else if (!length(s$response$facts)) "empty" else "answered"
+}, "")
+model_failed <- if (is.null(atomic)) character() else batch_ids[atomic_status != "answered"]
 A <- run_grid(has_grid(), "judged")
 # The same aggression rule over three sets of producers: the deterministic ones,
 # the model's atomic facts, and both.
 B <- run_grid(has_grid(aggression = aggression_from_facts), "facts", kept[!kept$producer %in% MODEL, ])
-C <- run_grid(has_grid(aggression = aggression_from_facts), "model facts", kept[!kept$producer %in% DETERMINISTIC, ])
-D <- run_grid(has_grid(aggression = aggression_from_facts), "all facts", kept)
+C <- run_grid(has_grid(aggression = aggression_from_facts), "model facts",
+  kept[!kept$producer %in% DETERMINISTIC, ], failed = model_failed)
+D <- run_grid(has_grid(aggression = aggression_from_facts), "all facts", kept, failed = model_failed)
 
 decided <- A$criteria[A$criteria$state != "unknown", ]
 used <- unique(unlist(strsplit(decided$facts[nzchar(decided$facts)], ",")))
@@ -239,16 +255,18 @@ say("  computed and structured criteria equal to luna: ",
 
 if (!is.null(atomic)) {
   mf <- facts[facts$producer == MODEL[[1L]], ]
-  done <- vapply(atomic$stays, function(s) !is.null(s$response), NA)
   secs <- vapply(atomic$stays, `[[`, 1, "seconds")
   say("")
   say("MODEL FACTS (", atomic$identity$model, ", question ", substr(atomic$identity$question_digest, 1, 8), ")")
-  say("  stays answered ", sum(done), " of ", length(batch_ids), " | failed ", sum(!done),
+  say("  stays: ", tab(atomic_status), " | failed by the contract (empty list or error): ",
+    if (length(model_failed)) paste0("#", match(model_failed, batch_ids), collapse = ",") else "none",
     " | seconds median ", round(median(secs)), ", total h ", round(sum(secs) / 3600, 1))
   per <- table(factor(mf$EVTID, levels = batch_ids))
   say("  facts per stay: median ", median(per), ", max ", max(per), " | kept ", sum(mf$status == "kept"),
     " | refused ", sum(mf$status == "refused"))
   say("  refusal reasons: ", tab(mf$reason[mf$status == "refused"]))
+  say("  refused because the category is not named, by concept: ",
+    tab(mf$concept[mf$reason %in% "the category is not named in any fragment cited for it"]))
   say("  concepts (kept): ", tab(mf$concept[mf$status == "kept"]))
   say("  status (kept): ", tab(ifelse(mf$negated, "excluded", ifelse(mf$hypothetical, "suspected",
     ifelse(mf$historical, "history", ifelse(mf$family, "family", mf$activity))))[mf$status == "kept"]))
@@ -257,61 +275,26 @@ if (!is.null(atomic)) {
   say("  facts carrying a stage: ", nrow(staged), " | ", tab(paste(staged$concept, staged$status)))
   ab <- facts[facts$producer == "rule:duration_days", ]
   say("  planned anti-infective courses: ", nrow(ab), " | of 21 days or more ", sum(ab$value >= 21, na.rm = TRUE))
-
-  # A deterministic screen over the model's facts: does any fragment a fact
-  # cites contain a word of its category? Grounding proves the text exists; this
-  # asks, crudely, whether it bears on the claim. Read as a pointer, not a test.
-  KEYWORDS <- c(
-    sepsis = "seps|septi|bacteriem", icu_organ_failure = "reanimation|soins intensifs|usi\\b|usc\\b|intub|ventil|sdra|defaillance",
-    major_surgery = "ectomie|resection|anastomose|chirurg|pontage|greffe|transplant|laparotomie|thoracotomie|sternotomie",
-    major_trauma_or_burn = "trauma|brulure", severe_pancreatitis = "pancreat", diabetic_crisis = "acidocet|hyperosmol|cetos",
-    deep_infection = "endocardit|spondylodisc|osteo|arthrit|prothese|discite|ostei", simple_infection = "infect|pneumo|pyelo|erysipel|abces|cellulite|cystite|sepsis",
-    stroke = "avc|accident vasculaire|ischemi|hemorrag|infarctus cerebral|thrombolys", fracture = "fractur",
-    fluid_electrolyte_disorder = "deshydrat|natr|kali|hypogly|insuffisance renale|ira\\b|creat",
-    malignancy = "cancer|carcinom|tumeur|neoplas|lymphom|leucem|myelom|metasta|sarcom|melanom|adenocarc|k\\b",
-    in_situ_or_benign_tumour = "in situ|pta|bowen|benign|adenome|tumeur|polype|meningiom",
-    heart_failure = "cardiaque|nyha|fevg|ic\\b|icc\\b|decompens", cardiac_cachexia = "cachex",
-    repeated_hf_decompensation = "decompens", copd = "bpco|gold|bronchopneumopathie", home_oxygen_or_niv = "oxyg|vni|ventilation",
-    chronic_kidney_disease = "renal|dfg|clairance|irc\\b|mrc\\b|nephro", dialysis = "dialys|eer\\b",
-    cirrhosis = "cirrhos|hepat|child", chronic_inflammatory_disease = "crohn|rch|rectocolite|polyarthrite|vascularit|lupus|spondyl|horton|maladie inflammatoire",
-    chronic_infection = "tubercul|mycobact|bcg|becegite|aspergill|mycose|vih|hiv|osteite", neurocognitive_disorder = "cognitif|demence|alzheimer|confus"
-  )
   mk <- mf[mf$status == "kept", ]
-  hit <- vapply(seq_len(nrow(mk)), function(i) {
-    q <- fold(paste(evidence$quote[evidence$fact_id == mk$fact_id[[i]]], collapse = " "))
-    pat <- KEYWORDS[mk$concept[[i]]]
-    if (is.na(pat)) NA else grepl(pat, q, perl = TRUE)
-  }, NA)
-  say("  kept facts whose citations hold no word of their category: ", sum(!hit, na.rm = TRUE), " of ", sum(!is.na(hit)),
-    " | by concept: ", tab(mk$concept[hit %in% FALSE]))
   mal <- mk[mk$concept == "malignancy", ]
   say("  malignancy facts: ", nrow(mal), " | status ", tab(ifelse(mal$historical, "history", mal$activity)),
     " | stage written ", sum(!is.na(mal$value_chr)), " | stage reads as not invasive (pTa, in situ) ",
-    sum(not_invasive(mal$value_chr)), " | stage mentions TVNIM ", sum(grepl("tvnim|non infiltrant le muscle", fold(mal$value_chr))),
-    " | pT1 ", sum(grepl("\\bp?t1", fold(mal$value_chr))))
+    sum(not_invasive(mal$value_chr)), " | pT1 ", sum(grepl("\\bp?t1", fold(mal$value_chr))))
 
-  # The same screen used as a guard: a model fact in a category the rule reads
-  # counts only if a word of its category is in what it cites. Indicative only:
-  # the word lists were written without reading a single document.
   RULED <- c("sepsis", "icu_organ_failure", "major_surgery", "major_trauma_or_burn", "severe_pancreatitis",
     "diabetic_crisis", "deep_infection", "heart_failure", "copd", "chronic_kidney_disease", "cardiac_cachexia",
     "repeated_hf_decompensation", "home_oxygen_or_niv", "dialysis", "cirrhosis", "chronic_inflammatory_disease",
     "chronic_infection", "malignancy")
-  unworded <- mk$fact_id[hit %in% FALSE & mk$concept %in% RULED]
-  guarded <- kept[!kept$producer %in% DETERMINISTIC & !kept$fact_id %in% unworded, ]
-  E <- run_grid(has_grid(aggression = aggression_from_facts), "model facts, worded", guarded)
-  agg$worded <- state_of(E)
-  ve <- va_(E)
-  say("  guard: ", length(unworded), " facts in ruled categories set aside | aggression met: model ",
-    sum(agg$model == "met"), " -> worded ", sum(agg$worded == "met"),
-    " | diagnosis vs decision, worded: ", tab(paste(dec, "|", ve$diagnosis)))
-  for (n in c(2L, 13L, 43L, 47L, 61L)) {
+  for (n in c(2L, 13L, 14L, 43L, 47L, 61L)) {
     id <- batch_ids[[n]]
     x <- mk[mk$EVTID == id & mk$concept %in% RULED & !mk$negated & !mk$hypothetical & !mk$family, ]
-    say(sprintf("  stay #%d: model facts in ruled categories: %s | rule %s (%s) | worded %s", n,
-      if (nrow(x)) paste(sprintf("%s[%s%s%s]", x$concept, ifelse(x$historical, "hist", x$activity),
-        ifelse(is.na(x$value_chr), "", ",stage"), ifelse(x$fact_id %in% unworded, ",unworded", "")), collapse = " ") else "none",
-      agg$model[agg$EVTID == id], agg$model_branch[agg$EVTID == id], agg$worded[agg$EVTID == id]))
+    r <- mf[mf$EVTID == id & mf$status == "refused", ]
+    a <- agg[agg$EVTID == id, ]
+    say(sprintf("  stay #%d: kept, ruled: %s | refused: %s | model %s (%s) | regex+PMSI %s (%s) | all %s", n,
+      if (nrow(x)) paste(sprintf("%s[%s%s]", x$concept, ifelse(x$historical, "hist", x$activity),
+        ifelse(is.na(x$value_chr), "", ",stage")), collapse = " ") else "none",
+      if (nrow(r)) paste(sprintf("%s(%s)", r$concept, sub("^the (\\w+).*$", "\\1", r$reason)), collapse = " ") else "none",
+      a$model, a$model_branch, a$facts, a$branch, a$all))
   }
 
   # Where judging and extracting disagree, what did the model's facts hold?
@@ -319,12 +302,13 @@ if (!is.null(atomic)) {
     x <- mk[mk$EVTID == id & !mk$negated & !mk$hypothetical & !mk$family, ]
     if (!nrow(x)) "no fact" else paste(sort(unique(paste0(x$concept, ifelse(x$historical, "(hist)", "")))), collapse = "+")
   }
-  lost <- agg$EVTID[agg$bonsai %in% "met" & agg$model != "met"]
-  say("  bonsai judged met, rule over its facts unknown (", length(lost), "): facts held: ",
+  lost <- agg$EVTID[agg$bonsai %in% "met" & agg$model %in% c("unknown", "not_met")]
+  say("  bonsai judged met, rule over its facts not met (", length(lost), "): facts held: ",
     tab(vapply(lost, affirmed_concepts, "")))
   gained <- agg$EVTID[!agg$bonsai %in% "met" & agg$model == "met"]
   say("  bonsai judged not met, rule over its facts met (", length(gained), "): branch ",
     tab(agg$model_branch[agg$EVTID %in% gained]))
+  say("  on the stays the contract failed, bonsai judged: ", tab(agg$bonsai[agg$EVTID %in% model_failed]))
 }
 
 # --- Francesco's review: only `decision` is his judgement ---------------------

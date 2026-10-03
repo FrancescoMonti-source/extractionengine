@@ -473,10 +473,16 @@ facts_lexicon <- function(stay, index, docs_type) {
     before <- substr(text[rows], pmax(1L, m[rows] - 60L), m[rows] - 1L)
     before <- sub("^.*[.;:!]", "", before)
     after <- substr(text[rows], m[rows] + attr(m, "match.length")[rows], m[rows] + attr(m, "match.length")[rows] + 12L)
+    # A year older than the admission near the match dates the mention to the
+    # past: "sepsis sur materiel en 2018" is history, whatever words surround it.
+    near <- substr(text[rows], pmax(1L, m[rows] - 80L), m[rows] + attr(m, "match.length")[rows] + 80L)
+    admitted <- as.integer(format(stay$admission, "%Y"))
+    dated_before <- vapply(regmatches(near, gregexpr("\\b(19|20)[0-9]{2}\\b", near, perl = TRUE)),
+      function(y) !is.na(admitted) && length(y) > 0L && any(as.integer(y) < admitted), NA)
     qual <- list(
       negated = grepl(NEGATION, before, perl = TRUE),
       hypothetical = grepl(HYPOTHESIS, before, perl = TRUE) | grepl("^[^.]{0,6}\\?", after, perl = TRUE),
-      historical = grepl(HISTORY, before, perl = TRUE),
+      historical = grepl(HISTORY, before, perl = TRUE) | dated_before,
       family = grepl(FAMILY, before, perl = TRUE)
     )
     value <- switch(concept,

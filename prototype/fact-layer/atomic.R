@@ -118,6 +118,36 @@ atomic_request <- function(bundle, stay) {
 
 # --- from the response to facts ---------------------------------------------
 
+# A category is a claim, like a stage: some word of it must be in what the fact
+# cites, or the fact is refused. The lists are crude and were written without
+# reading a document; a category with no list (other_acute_condition) is not
+# checked. "Diabetic crisis" is the case that asked for it: 6 of 8 cited a type 2
+# diabetes, a hypoglycaemia, a lactic acidosis or a "desequilibre", never an
+# acidocetose.
+CATEGORY_WORDS <- c(
+  sepsis = "seps|septi|bacteriem", icu_organ_failure = "reanimation|soins intensifs|usi\\b|usc\\b|intub|ventil|sdra|defaillance",
+  major_surgery = "ectomie|resection|anastomose|chirurg|pontage|greffe|transplant|laparotomie|thoracotomie|sternotomie",
+  major_trauma_or_burn = "trauma|brulure", severe_pancreatitis = "pancreat", diabetic_crisis = "acidocet|hyperosmol|cetos",
+  deep_infection = "endocardit|spondylodisc|osteo|arthrit|prothese|discite|ostei",
+  simple_infection = "infect|pneumo|pneumopathie|pyelo|prostatit|cholecystit|angiocholit|diverticulit|bronchit|erysipel|abces|cellulite|cystite|seps|pna\\b",
+  stroke = "avc|accident vasculaire|ischemi|hemorrag|infarctus cerebral|thrombolys", fracture = "fractur",
+  fluid_electrolyte_disorder = "deshydrat|natr|kali|calc|hypogly|insuffisance renale|ira\\b|creat",
+  malignancy = "cancer|carcinom|tumeur|neoplas|lymphom|leucem|myelom|metasta|sarcom|melanom|adenocarc|k\\b",
+  in_situ_or_benign_tumour = "in situ|pta|bowen|benign|adenome|tumeur|polype|meningiom",
+  heart_failure = "cardiaque|nyha|fevg|ic\\b|icc\\b|decompens", cardiac_cachexia = "cachex",
+  repeated_hf_decompensation = "decompens", copd = "bpco|gold|bronchopneumopathie", home_oxygen_or_niv = "oxyg|vni|ventilation",
+  chronic_kidney_disease = "renal|dfg|clairance|irc\\b|mrc\\b|nephro", dialysis = "dialys|eer\\b",
+  cirrhosis = "cirrhos|hepat|child",
+  chronic_inflammatory_disease = "crohn|rch|rectocolite|mici|polyarthrite|vascularit|lupus|spondyl|horton|sarcoid|psoria|maladie inflammatoire",
+  chronic_infection = "tubercul|mycobact|bcg|becegite|aspergill|mycose|vih|hiv|osteite",
+  neurocognitive_disorder = "cognitif|demence|alzheimer|confus"
+)
+
+named <- function(concept, quotes) {
+  pattern <- CATEGORY_WORDS[concept]
+  is.na(pattern) || grepl(pattern, fold(paste(quotes, collapse = " ")), perl = TRUE)
+}
+
 compact <- function(x) gsub("[\\s\\p{Zs}]+", "", fold(x), perl = TRUE)
 
 # The stage rule: a stage the model transcribed must be in a fragment it cited.
@@ -142,7 +172,8 @@ facts_atomic <- function(response, stay, index, producer, version) {
     ev <- ev[!is.na(ev$evidence_id), , drop = FALSE]
     stage_ok <- transcribed(r$stage, ev$quote)
     duration_ok <- transcribed(r$duration, ev$quote)
-    reason <- if (!nrow(ev)) "cites no fragment" else if (!stage_ok)
+    reason <- if (!nrow(ev)) "cites no fragment" else if (!named(r$concept, ev$quote))
+      "the category is not named in any fragment cited for it" else if (!stage_ok)
       "the stage is not in any fragment cited for it" else if (!duration_ok)
       "the duration is not in any fragment cited for it" else NA_character_
     id <- new_ids(1L)
