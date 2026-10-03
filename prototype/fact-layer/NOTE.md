@@ -1,7 +1,8 @@
 # Note: can the HAS grid be a page of rules over facts?
 
-Every number below comes from `run.R` at commit `7b77222`, run from a clean tree
-over the 64 test stays. The results are in
+Every number below comes from `run.R` at commit `efa56fe`, run from a clean tree
+over the 64 test stays, except where a number is marked as before the contract
+(commit `7b77222`). The results are in
 `%APPDATA%/R/data/R/extractionengine/fact-layer-prototype/summary.log`. The
 model's facts come from `extract_atomic.R` and are saved in
 `atomic-bonsai-64.rds` in the same folder. The question it asked has digest
@@ -24,12 +25,13 @@ facts a decision rests on resolves to a quote or a source row.
 The experiment used the same local model, the same documents and the same
 settings throughout. Asked to judge, the model found aggression in 23 of the 61
 stays it answered; its pass failed on the other 3. Asked only to list facts,
-with R applying the closed list, it also found aggression in 23 stays. The two
-methods agree on 45 of the 61 stays both answered. In exchange, every answer now
-names its branch and the quoted facts behind it.
+with R applying the closed list, it also found aggression in 23 stays before the
+contract below. In exchange, every answer now names its branch and the quoted
+facts behind it.
 
 **Two conditions**, from a review of the stays by the redsan-coding session,
-which I checked against these files:
+which I checked against these files, and which are now written into the
+contract (R only, no new model call):
 
 1. **An empty list is a failure, not a finding.** On stay #13 the model
    reasoned for about 2,000 tokens and returned no fact. That stay is the
@@ -38,9 +40,21 @@ which I checked against these files:
    which repeats exactly the silence DENUT could not see. A stay with documents
    and no fact must fail.
 2. **A category is a claim, like a stage.** Its word must be in what the fact
-   cites. A quarter of the model's facts cite fragments that never name their
-   category (below). The prototype computed this only on the side; it belongs in
-   the contract.
+   cites, or the fact is refused.
+
+**Under the contract**, #13 fails instead of passing as "nothing found", and 75
+of the model's 402 facts are refused because their citations never name their
+category, the six false diabetic crises among them. Stay #2 then drops out:
+its only qualifying fact was one of those crises. The rule over the model's facts
+finds aggression in 18 stays, against 23 for the same model judging. The two
+methods agree on 43 of the 60 stays both answered. On the 23 stays where
+aggression was expected to hold, the nutritionist's 13 and the 10 controls,
+extracting finds 8 and judging 11; adding the regex and PMSI facts brings
+extracting to 11. Stay #13 is in neither count. The category word lists were
+written without reading a document, so some of the 75 refusals are the lists'
+fault, not the model's: heart failure (5), chronic inflammatory disease (6) and
+kidney disease (3) are the ones to check first in `report.txt`. That calibration
+is the next piece of work.
 
 **What this batch cannot measure is recall against your review.** All 64 stays
 were picked because luna judged aggression met, and 41 because that aggression
@@ -115,31 +129,31 @@ be squeezed into the nearest box that qualifies. Each fact also carries a status
 admission. A stage or a planned treatment duration is transcribed word for word.
 The model answers no criterion.
 
-**What R did.** It refused 17 of the 402 facts. Eight carried a stage and seven
-a duration that no cited fragment contains, and two cited nothing. Then it
-applied the closed list. It reads the stage itself: NYHA III or IV, GOLD 3 or 4,
+**What R did.** It refused 88 of the 402 facts: 75 whose citations never name
+their category, 6 carrying a stage and 5 a duration that no cited fragment
+contains, and 2 that cited nothing. Then it applied the closed list. It reads the stage itself: NYHA III or IV, GOLD 3 or 4,
 kidney failure stage 4 or 5 or a GFR under 30, a tumour that is not pTa or in
 situ. It applies the timing rule: an acute condition that began during the stay
 does not count. It requires an inflammatory or infectious chronic disease to be
 active.
 
-**Where judging and extracting disagree, the facts say why.** On 9 stays bonsai
-judged aggression met and the rule did not. On those stays the model's own facts
-hold only categories the list excludes: a simple infection, a metabolic
+**Where judging and extracting disagree, the facts say why.** On 12 stays bonsai
+judged aggression met and the rule did not. On those stays the model's kept
+facts hold only categories the list excludes: a simple infection, a metabolic
 disorder, a stroke, a heart failure with no written class. Or they hold cancers
-filed as history, or a sepsis that began during the stay. On 7 stays the rule
+filed as history, or a sepsis that began during the stay. On 5 stays the rule
 found aggression and bonsai's judgement did not. A judgement that disagrees can
 only be argued with. A fact that disagrees can be checked against its quote.
 
-**Where the model errs now: filing.** A crude screen asks whether the fragments
-a fact cites contain any word of its category. For 73 of 284 facts they do not.
-The word lists were written without reading a document, so some of these are
-the lists' fault. One category stands out: 6 of 8 "diabetic crisis" facts never
+**Where the model errs now: filing.** Before the contract, a crude screen asked
+whether the fragments a fact cites contain any word of its category, and for 73
+of 284 kept facts they did not. The word lists were written without reading a
+document, so some of these are the lists' fault. One category stands out: 6 of 8 "diabetic crisis" facts never
 say acidocétose, cétose or hyperosmolaire. Read by the redsan-coding session,
 they are three type 2 diabetes named as a diagnosis, a severe hypoglycaemia
 (which the text excludes), a lactic acidosis, and a "déséquilibre du diabète".
-One of them is what makes stay #2 meet the acute branch. Used as a guard, the
-screen cuts aggression from 23 stays to 18.
+One of them was what made stay #2 meet the acute branch, before the contract
+refused it.
 
 **A measurement belongs to R, not to the model.** Both real ketoacidoses
 already have their blood gases in the bundle's biology table. The model's only
@@ -154,8 +168,8 @@ judgement left to the model; the word check and the lab facts take it away.
   in three aggression rationales, and nothing it cited holds any of them. Read as
   facts and grounded like any number, all three are refused. Asked only for
   facts, the same model again wrote stages its citations do not hold, 8 times,
-  and all 8 were refused. On stay #2 that included the heart-failure class
-  again. A refused fact never reaches a rule.
+  and all 8 are refused: 6 for the stage, 2 first for an unnamed category. On
+  stay #2 that included the heart-failure class again. A refused fact never reaches a rule.
 - **A branch the model never looked at.** On the BCGitis stay (#47), the lexicon
   finds ethambutol, isoniazid and rifampicin, and the rule "two distinct
   anti-tuberculous drugs" meets the chronic branch. Bonsai's judgement said
@@ -184,7 +198,7 @@ judgement left to the model; the word check and the lab facts take it away.
   None of the 64 stays has a dated comparison, so the dated path has not run.
 - **Derived values (gap 2).** 178 of the 432 decided criteria rest on a derived
   fact, and each resolves down to quotes. A planned treatment duration becomes a
-  derived fact in days that cites its infection; 20 were derived, and one
+  derived fact in days that cites its infection; 17 were derived, and one
   reached three weeks. When a stay documents no weight to divide a loss in
   kilograms by, that derivation is refused with the reason, twice, never guessed.
 - **Label-selected analytes (gap 1).** A concept is a test over rows, not a code
@@ -195,7 +209,7 @@ judgement left to the model; the word check and the lab facts take it away.
 - **Judgements.** The dietitian's box is a judgement she wrote in the record. It
   enters as a fact asserted by `dietitian` (41 stays), and the aggression rule
   ignores it. Of those 41 stays, the rule over the model's facts meets aggression
-  in 16. The model's own criterion answers enter as facts asserted by `model`.
+  in 11. The model's own criterion answers enter as facts asserted by `model`.
   `judged()` is the only place a rule reads an answer instead of computing one.
   The experiment above retires that for aggression.
 - **Silence.** No rule can see a fact nobody extracted, so recall is checked
@@ -203,11 +217,12 @@ judgement left to the model; the word check and the lab facts take it away.
   number, and luna left one stay with no anthropometric fact. The model left
   stay #13 with no fact at all, which is the first condition above. The regex
   and PMSI producers meet aggression on 4 stays where the model's facts do not,
-  and the model on 17 where they do not. Two producers that disagree point at
+  and the model on 13 where they do not. Two producers that disagree point at
   what one of them missed. But the regex errs too: on stay #14 it read a sepsis
   from years before as current, and that alone made the stay supported and
-  severe. A keyword producer needs the past-history flag as much as the model
-  does, and a year older than the admission should set it.
+  severe. It now marks a mention as past history when a year older than the
+  admission sits near it, or is the only kind of year its fragment holds: 14
+  mentions instead of 5, and #14 no longer meets aggression.
 
 ## Not tested
 
