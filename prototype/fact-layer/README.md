@@ -51,10 +51,21 @@ luna run, and writes every output under
 `tools::R_user_dir("extractionengine", "data")/fact-layer-prototype/`.
 
 ```powershell
+New-Item -ItemType Directory -Force $env:TEMP\redsancoding-13c92ea | Out-Null
+git -C ..\redsan-coding archive 13c92ea | tar -x -C $env:TEMP\redsancoding-13c92ea
+$env:REDSANCODING_SRC = "$env:TEMP\redsancoding-13c92ea"
 Start-Process -FilePath "C:\Program Files\R\R-4.6.1\bin\Rscript.exe" `
   -ArgumentList "prototype/fact-layer/run.R" `
   -RedirectStandardOutput run.out -RedirectStandardError run.err -Wait -NoNewWindow
 ```
+
+`run.R` stubs `redsan::doceds_onnx_spec()` for the session: the catalog
+records the trimmer's identity for audit only, no trimmer artifact is installed
+on this machine, and the fragments do not depend on it.
+
+It writes `summary.log` (aggregates only, stays numbered 1-64), `report.txt`
+(per stay: facts, quotes, decisions; patient text, stays local) and
+`fact-layer-64.rds`.
 
 Inputs, all local:
 
