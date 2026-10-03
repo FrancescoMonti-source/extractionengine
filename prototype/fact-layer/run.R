@@ -53,6 +53,9 @@ tab <- function(x) {
 same <- function(a, b) mapply(identical, a, b)
 group_of <- setNames(rep(names(batch), lengths(batch)), unlist(batch))
 n_of <- setNames(seq_along(batch_ids), batch_ids)
+# Francesco's review: only `decision` is his judgement.
+rv <- review[as.character(review$EVTID) %in% batch_ids, ]
+dec <- vapply(batch_ids, function(id) paste(sort(unique(rv$decision[as.character(rv$EVTID) == id])), collapse = "+"), "")
 
 # --- facts -------------------------------------------------------------------
 
@@ -254,12 +257,78 @@ if (!is.null(atomic)) {
   say("  facts carrying a stage: ", nrow(staged), " | ", tab(paste(staged$concept, staged$status)))
   ab <- facts[facts$producer == "rule:duration_days", ]
   say("  planned anti-infective courses: ", nrow(ab), " | of 21 days or more ", sum(ab$value >= 21, na.rm = TRUE))
+
+  # A deterministic screen over the model's facts: does any fragment a fact
+  # cites contain a word of its category? Grounding proves the text exists; this
+  # asks, crudely, whether it bears on the claim. Read as a pointer, not a test.
+  KEYWORDS <- c(
+    sepsis = "seps|septi|bacteriem", icu_organ_failure = "reanimation|soins intensifs|usi\\b|usc\\b|intub|ventil|sdra|defaillance",
+    major_surgery = "ectomie|resection|anastomose|chirurg|pontage|greffe|transplant|laparotomie|thoracotomie|sternotomie",
+    major_trauma_or_burn = "trauma|brulure", severe_pancreatitis = "pancreat", diabetic_crisis = "acidocet|hyperosmol|cetos",
+    deep_infection = "endocardit|spondylodisc|osteo|arthrit|prothese|discite|ostei", simple_infection = "infect|pneumo|pyelo|erysipel|abces|cellulite|cystite|sepsis",
+    stroke = "avc|accident vasculaire|ischemi|hemorrag|infarctus cerebral|thrombolys", fracture = "fractur",
+    fluid_electrolyte_disorder = "deshydrat|natr|kali|hypogly|insuffisance renale|ira\\b|creat",
+    malignancy = "cancer|carcinom|tumeur|neoplas|lymphom|leucem|myelom|metasta|sarcom|melanom|adenocarc|k\\b",
+    in_situ_or_benign_tumour = "in situ|pta|bowen|benign|adenome|tumeur|polype|meningiom",
+    heart_failure = "cardiaque|nyha|fevg|ic\\b|icc\\b|decompens", cardiac_cachexia = "cachex",
+    repeated_hf_decompensation = "decompens", copd = "bpco|gold|bronchopneumopathie", home_oxygen_or_niv = "oxyg|vni|ventilation",
+    chronic_kidney_disease = "renal|dfg|clairance|irc\\b|mrc\\b|nephro", dialysis = "dialys|eer\\b",
+    cirrhosis = "cirrhos|hepat|child", chronic_inflammatory_disease = "crohn|rch|rectocolite|polyarthrite|vascularit|lupus|spondyl|horton|maladie inflammatoire",
+    chronic_infection = "tubercul|mycobact|bcg|becegite|aspergill|mycose|vih|hiv|osteite", neurocognitive_disorder = "cognitif|demence|alzheimer|confus"
+  )
+  mk <- mf[mf$status == "kept", ]
+  hit <- vapply(seq_len(nrow(mk)), function(i) {
+    q <- fold(paste(evidence$quote[evidence$fact_id == mk$fact_id[[i]]], collapse = " "))
+    pat <- KEYWORDS[mk$concept[[i]]]
+    if (is.na(pat)) NA else grepl(pat, q, perl = TRUE)
+  }, NA)
+  say("  kept facts whose citations hold no word of their category: ", sum(!hit, na.rm = TRUE), " of ", sum(!is.na(hit)),
+    " | by concept: ", tab(mk$concept[hit %in% FALSE]))
+  mal <- mk[mk$concept == "malignancy", ]
+  say("  malignancy facts: ", nrow(mal), " | status ", tab(ifelse(mal$historical, "history", mal$activity)),
+    " | stage written ", sum(!is.na(mal$value_chr)), " | stage reads as not invasive (pTa, in situ) ",
+    sum(not_invasive(mal$value_chr)), " | stage mentions TVNIM ", sum(grepl("tvnim|non infiltrant le muscle", fold(mal$value_chr))),
+    " | pT1 ", sum(grepl("\\bp?t1", fold(mal$value_chr))))
+
+  # The same screen used as a guard: a model fact in a category the rule reads
+  # counts only if a word of its category is in what it cites. Indicative only:
+  # the word lists were written without reading a single document.
+  RULED <- c("sepsis", "icu_organ_failure", "major_surgery", "major_trauma_or_burn", "severe_pancreatitis",
+    "diabetic_crisis", "deep_infection", "heart_failure", "copd", "chronic_kidney_disease", "cardiac_cachexia",
+    "repeated_hf_decompensation", "home_oxygen_or_niv", "dialysis", "cirrhosis", "chronic_inflammatory_disease",
+    "chronic_infection", "malignancy")
+  unworded <- mk$fact_id[hit %in% FALSE & mk$concept %in% RULED]
+  guarded <- kept[!kept$producer %in% DETERMINISTIC & !kept$fact_id %in% unworded, ]
+  E <- run_grid(has_grid(aggression = aggression_from_facts), "model facts, worded", guarded)
+  agg$worded <- state_of(E)
+  ve <- va_(E)
+  say("  guard: ", length(unworded), " facts in ruled categories set aside | aggression met: model ",
+    sum(agg$model == "met"), " -> worded ", sum(agg$worded == "met"),
+    " | diagnosis vs decision, worded: ", tab(paste(dec, "|", ve$diagnosis)))
+  for (n in c(2L, 13L, 43L, 47L, 61L)) {
+    id <- batch_ids[[n]]
+    x <- mk[mk$EVTID == id & mk$concept %in% RULED & !mk$negated & !mk$hypothetical & !mk$family, ]
+    say(sprintf("  stay #%d: model facts in ruled categories: %s | rule %s (%s) | worded %s", n,
+      if (nrow(x)) paste(sprintf("%s[%s%s%s]", x$concept, ifelse(x$historical, "hist", x$activity),
+        ifelse(is.na(x$value_chr), "", ",stage"), ifelse(x$fact_id %in% unworded, ",unworded", "")), collapse = " ") else "none",
+      agg$model[agg$EVTID == id], agg$model_branch[agg$EVTID == id], agg$worded[agg$EVTID == id]))
+  }
+
+  # Where judging and extracting disagree, what did the model's facts hold?
+  affirmed_concepts <- function(id) {
+    x <- mk[mk$EVTID == id & !mk$negated & !mk$hypothetical & !mk$family, ]
+    if (!nrow(x)) "no fact" else paste(sort(unique(paste0(x$concept, ifelse(x$historical, "(hist)", "")))), collapse = "+")
+  }
+  lost <- agg$EVTID[agg$bonsai %in% "met" & agg$model != "met"]
+  say("  bonsai judged met, rule over its facts unknown (", length(lost), "): facts held: ",
+    tab(vapply(lost, affirmed_concepts, "")))
+  gained <- agg$EVTID[!agg$bonsai %in% "met" & agg$model == "met"]
+  say("  bonsai judged not met, rule over its facts met (", length(gained), "): branch ",
+    tab(agg$model_branch[agg$EVTID %in% gained]))
 }
 
 # --- Francesco's review: only `decision` is his judgement ---------------------
 
-rv <- review[as.character(review$EVTID) %in% batch_ids, ]
-dec <- vapply(batch_ids, function(id) paste(sort(unique(rv$decision[as.character(rv$EVTID) == id])), collapse = "+"), "")
 say("")
 say("REVIEW DECISION (Francesco, 2026-09-12) against the grid's diagnosis, per stay")
 say("  decisions: ", tab(dec))
