@@ -3,17 +3,21 @@
 # and writes a checkpoint after each, so an interrupted run resumes where it
 # stopped. Prints counts and timings only: no identifier, no text.
 #
-#   Rscript extract_every_fact.R smoke   # stays #16 and #57 first
-#   Rscript extract_every_fact.R all
+#   Rscript extract_every_fact.R smoke     # stays #16 and #57 first
+#   Rscript extract_every_fact.R all       # seed 1: every-fact-bonsai-64.rds
+#   Rscript extract_every_fact.R all 2     # seed 2: every-fact-bonsai-64-s2.rds
 #
 # Sampling and thinking are the DENUT bonsai runs' own (seed 1, temperature 1,
 # top_p 0.95, top_k 20, min_p 0.05, 2048 thinking tokens), on the same
-# documents, so what differs from them is the shape of the question.
+# documents, so what differs from them is the shape of the question. Another
+# seed measures the fact layer's own run-to-run noise.
 
 loc <- Sys.setlocale("LC_ALL", "English_United States.utf8")
 options(warn = 1, ellmer_timeout_s = 1800)
-mode <- commandArgs(trailingOnly = TRUE)[1]
-stopifnot(mode %in% c("smoke", "all"))
+args <- commandArgs(trailingOnly = TRUE)
+mode <- args[1]
+seed <- if (length(args) >= 2L) as.integer(args[2]) else 1L
+stopifnot(mode %in% c("smoke", "all"), !is.na(seed), seed >= 1L)
 here <- dirname(normalizePath(sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))))
 src <- Sys.getenv("REDSANCODING_SRC")
 od <- "C:/Users/franc/AppData/Roaming/R/data/R/redsancoding/denut"
@@ -34,7 +38,7 @@ model <- sub("[.]gguf$", "", basename(gsub("\\\\", "/", props$model_path)))
 stopifnot(props$default_generation_settings$n_ctx >= 65536)
 chat <- ellmer::chat_openai_compatible(
   base_url = "http://localhost:8080/v1", model = model,
-  params = ellmer::params(temperature = 1, top_p = 0.95, top_k = 20L, seed = 1L,
+  params = ellmer::params(temperature = 1, top_p = 0.95, top_k = 20L, seed = seed,
     presence_penalty = 0, reasoning_effort = "budget2048"),
   api_args = list(reasoning_effort = "medium", thinking_budget_tokens = 2048L, min_p = 0.05,
     max_tokens = 16384L),
@@ -46,11 +50,11 @@ identity <- list(
   question_digest = .json_digest(list(EVERY_FACT_PROMPT, ATOMIC_CONCEPTS, ABSORPTION_CAUSES, MUSCLE_METHODS,
     deparse(every_fact_type), deparse(every_fact_request)))
 )
-path <- file.path(out_dir, "every-fact-bonsai-64.rds")
+path <- file.path(out_dir, paste0("every-fact-bonsai-64", if (seed != 1L) paste0("-s", seed), ".rds"))
 state <- if (file.exists(path)) readRDS(path) else list(identity = identity, stays = list())
 stopifnot(identical(state$identity[c("model", "chat_digest", "question_digest")],
   identity[c("model", "chat_digest", "question_digest")]))
-cat("server", model, props$build_info, "| chat", substr(identity$chat_digest, 1, 8),
+cat("server", model, props$build_info, "| seed", seed, "| chat", substr(identity$chat_digest, 1, 8),
   "| question", substr(identity$question_digest, 1, 8), "| done before", length(state$stays), "\n")
 
 ids <- if (mode == "smoke") batch_ids[c(16L, 57L)] else batch_ids
@@ -87,4 +91,4 @@ for (id in ids) {
     if (ok) paste(names(counts), counts, sep = ":", collapse = " ") else "-"))
 }
 done <- vapply(state$stays, function(s) !is.null(s$response), NA)
-cat("DONE", mode, "| answered", sum(done), "of", length(batch_ids), "| failed", sum(!done), "\n")
+cat("DONE", mode, "seed", seed, "| answered", sum(done), "of", length(batch_ids), "| failed", sum(!done), "\n")

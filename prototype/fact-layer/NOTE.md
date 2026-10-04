@@ -113,6 +113,26 @@ answer them.
 DENUT's noise, not for the fact layer's own, which nobody has measured. A
 second seed would take another 3.3 h.
 
+## The second seed (written on 4 October 2026, before the run)
+
+You chose to run it before deciding whether the fact table becomes the engine's
+output contract. Only the seed changes, from 1 to 2. The model, the question,
+the documents and the rules are those of the first run, and DENUT + Bonsai's
+own seed-2 run used the same change.
+
+**The reading is the same as the first run's**, on the same 44 stays: 0 or 1
+lost is clearly better, 2 to 10 about equal, 11 or more worse.
+
+**Combined, I read the worse of the two seeds.** The shape is clearly better
+only if both seeds lose 0 or 1. If seed 2 lands at 2 to 10, the first result
+was partly luck, and the honest summary is about equal with better
+traceability.
+
+**Reported beside it, with no threshold:** the stays each seed lost, and how
+many answers on each axis change between the two seeds. That is the fact
+layer's run-to-run noise, the number the first run could not give. Bonsai
+changed 12 of 60 phenotype answers between its two DENUT runs.
+
 ## The first experiment
 
 Every number below comes from `run.R` at commit `efa56fe`, run from a clean tree

@@ -84,6 +84,11 @@ Start-Process -FilePath "C:\Program Files\R\R-4.6.1\bin\Rscript.exe" `
   -RedirectStandardOutput compare.out -RedirectStandardError compare.err -Wait -NoNewWindow
 ```
 
+A second seed: pass it after `all` to `extract_every_fact.R`, and alone to
+`compare.R`. Seed 2 writes `every-fact-bonsai-64-s2.rds`, `compare-s2.log`,
+`compare-s2-report.txt` and `compare-64-s2.rds`, and adds seed 2 against seed 1
+to its log. Run `compare.R` for seed 1 first, at the same commit.
+
 It also reads DENUT + Bonsai's closed-list runs of 1 and 2 October
 (`bonsai2-27b-budget2048-23-…-closed-20261001-s1.rds` and
 `bonsai2-27b-budget2048-41-…-closed-20261002-s1.rds`).

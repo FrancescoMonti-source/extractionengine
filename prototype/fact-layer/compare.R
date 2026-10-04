@@ -3,12 +3,18 @@
 # runs, luna r2 and Francesco's decision column, read as NOTE.md fixed it
 # before the run.
 #
+#   Rscript compare.R       # seed 1: compare.log, compare-report.txt, compare-64.rds
+#   Rscript compare.R 2     # seed 2: compare-s2.*, and seed 2 against seed 1
+#
 # compare.log holds aggregates only: no identifier, no text, stays numbered
 # 1-64. compare-report.txt holds quotes and identifiers, for a reader on this
 # machine.
 
 loc <- Sys.setlocale("LC_ALL", "English_United States.utf8")
 options(warn = 1)
+seed <- as.integer(c(commandArgs(trailingOnly = TRUE), "1")[1])
+stopifnot(!is.na(seed), seed >= 1L)
+sfx <- if (seed != 1L) paste0("-s", seed) else ""
 here <- dirname(normalizePath(sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))))
 src <- Sys.getenv("REDSANCODING_SRC")
 od <- "C:/Users/franc/AppData/Roaming/R/data/R/redsancoding/denut"
@@ -29,7 +35,7 @@ cat64 <- rd("bonsai2-27b-budget2048-64-v120-fiche-cora-aggression-catabolism-202
 c23 <- rd("bonsai2-27b-budget2048-23-v120-fiche-cora-aggression-closed-20261001-s1.rds")
 c41 <- rd("bonsai2-27b-budget2048-41-v120-fiche-cora-aggression-closed-20261002-s1.rds")
 review <- readxl::read_excel(file.path(datasets, "denut-revue-codage-2026-09-12.xlsx"), sheet = 1)
-ck <- readRDS(file.path(out_dir, "every-fact-bonsai-64.rds"))
+ck <- readRDS(file.path(out_dir, paste0("every-fact-bonsai-64", sfx, ".rds")))
 
 log <- character()
 say <- function(...) log <<- c(log, paste0(...))
@@ -46,7 +52,8 @@ KINDS <- c("weights", "heights", "bmis", "losses", "stable_weight", "intake", "f
 PRODUCER <- "bonsai-every-fact"
 RULES <- c("rule:bmi", "rule:weight_change", "rule:kg_to_percent", "rule:duration_days")
 
-say("RUN ", format(Sys.time(), "%Y-%m-%d %H:%M"), " | prototype commit ", substr(git("rev-parse", "HEAD"), 1, 7),
+commit <- git("rev-parse", "HEAD")
+say("RUN ", format(Sys.time(), "%Y-%m-%d %H:%M"), " | seed ", seed, " | prototype commit ", substr(commit, 1, 7),
   " | tree clean ", !length(git("status", "--porcelain", "--", ".")), " | redsancoding source ", basename(src))
 say("MODEL ", ck$identity$model, " | question ", substr(ck$identity$question_digest, 1, 8),
   " | chat ", substr(ck$identity$chat_digest, 1, 8), " | build ", ck$identity$build)
@@ -248,9 +255,45 @@ for (i in lost$fl) {
 
 # --- outputs ------------------------------------------------------------------------
 
+# --- this seed against seed 1 ----------------------------------------------------------
+# The fact layer's own noise, beside DENUT's against itself (catabolism-closed
+# above). Seed 1's verdicts must come from this same commit.
+
+if (seed != 1L) {
+  s1 <- readRDS(file.path(out_dir, "compare-64.rds"))
+  if (!identical(s1$commit, commit)) stop("compare-64.rds is not from this commit: run compare.R for seed 1 first")
+  s1_axis <- function(k) {
+    x <- s1$verdicts[[k]][match(batch_ids, s1$verdicts$EVTID)]
+    ifelse(is.na(x), "-", x)
+  }
+  s1_crit <- function(name) {
+    r <- s1$criteria[endsWith(s1$criteria$criterion, paste0(".", name)), ]
+    x <- r$state[match(batch_ids, r$EVTID)]
+    ifelse(is.na(x), "-", x)
+  }
+  lost1 <- s1$lost$fl
+  say("")
+  say("SEED ", seed, " AGAINST SEED 1 (the fact layer against itself)")
+  say("  of the ", sum(set44), " stays, left without the phenotype: seed 1 ", length(lost1), " (", ords(lost1), ") | seed ", seed, " ",
+    n_fl, " (", ords(lost$fl), ") | by both: ", ords(intersect(lost1, lost$fl)))
+  for (k in c("phenotypic", "etiologic", "diagnosis", "severity")) {
+    say(sprintf("  %-10s differing, seed 1 vs seed %d: %s | catabolism-closed: %s", k, seed,
+      differ(s1_axis(k), fl_axis(k)), differ(axis_of(cat64, k), closed_axis(k))))
+  }
+  say("  phenotypic, seed 1 -> seed ", seed, ": ", tab(paste(s1_axis("phenotypic"), "->", fl_axis("phenotypic"))))
+  say("  diagnosis, seed 1 -> seed ", seed, ": ", tab(paste(s1_axis("diagnosis"), "->", fl_axis("diagnosis"))))
+  for (k in c("phenotypic.loss", "phenotypic.imc", "phenotypic.muscle", "etiologic.intake", "etiologic.absorption",
+    "etiologic.aggression")) {
+    say(sprintf("  %-22s seed 1->%d: %s", k, seed, tab(paste(s1_crit(k), "->", fl_crit(k)))))
+  }
+  mf1 <- s1$facts[s1$facts$producer == PRODUCER, ]
+  say("  model facts, seed 1: ", nrow(mf1), " (kept ", sum(mf1$status == "kept"), ") | seed ", seed, ": ", nrow(mf),
+    " (kept ", sum(mf$status == "kept"), ")")
+}
+
 saveRDS(list(stays = stays, status = status_of, facts = facts, evidence = evidence, criteria = FC, verdicts = FV,
-  review_decision = dec, lost = lost), file.path(out_dir, "compare-64.rds"))
-writeLines(iconv(log, "UTF-8", "ASCII//TRANSLIT"), file.path(out_dir, "compare.log"))
+  review_decision = dec, lost = lost, seed = seed, commit = commit), file.path(out_dir, paste0("compare-64", sfx, ".rds")))
+writeLines(iconv(log, "UTF-8", "ASCII//TRANSLIT"), file.path(out_dir, paste0("compare", sfx, ".log")))
 
 clip <- function(x, n = 180) ifelse(nchar(x) > n, paste0(substr(x, 1, n), "..."), x)
 explain <- function(id, indent = "      ", depth = 0L) {
@@ -296,5 +339,5 @@ for (n in seq_along(batch_ids)) {
     for (fid in mine$fact_id) report <- c(report, explain(fid))
   }
 }
-writeLines(iconv(report, "UTF-8", "ASCII//TRANSLIT"), file.path(out_dir, "compare-report.txt"))
+writeLines(iconv(report, "UTF-8", "ASCII//TRANSLIT"), file.path(out_dir, paste0("compare", sfx, "-report.txt")))
 writeLines(c("done", out_dir))
