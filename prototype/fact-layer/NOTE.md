@@ -133,6 +133,34 @@ many answers on each axis change between the two seeds. That is the fact
 layer's run-to-run noise, the number the first run could not give. Bonsai
 changed 12 of 60 phenotype answers between its two DENUT runs.
 
+**Result, run on 4 October.** The extraction is `every-fact-bonsai-64-s2.rds`
+(question `e85da1a3`, chat settings `fa10b439`, the same as DENUT + Bonsai's
+own seed-2 run). The comparison is `compare-s2.log`, from `compare.R` at
+`ae5d238` on a clean tree. Seed 1's `compare.log`, rerun at the same commit,
+is unchanged apart from its header.
+
+**About equal, by the reading fixed before the run.** Seed 2 left 3 of the 44
+stays without the phenotype: #10, #13 and #38. Seed 1 left none. The worse
+seed decides, so the shape's value on this test is traceability and
+generality, not a measured gain.
+
+- **The pooled picture still leans the fact layer's way.** Over its two seeds
+  it lost 3 of 88 stay-runs; DENUT + Bonsai lost 12 of 88 over its two runs.
+  The rule was fixed to read the worse seed, and it stands.
+- **The three were lost differently from DENUT's.** No stay failed, and no
+  weight was refused for a wrong number. On #10 and #13 the model returned no
+  weight, height, BMI or loss at all, and a single condition. On #38 it gave a
+  weight, a height and a BMI that cite no fragment, and R refused them. These
+  are answers that came back almost empty, not grounding refusals.
+- **The fact layer's own noise, the number seed 1 could not give:** 6 of 64
+  phenotype answers change between its seeds, against 12 of 60 between
+  DENUT's two runs. The diagnosis changes on 19 of 64, against 22 of 60. The
+  etiology is the noisy part: 14 aggressions met at seed 1 are unknown at
+  seed 2, and 5 go the other way.
+- **This seed did less work.** It returned 1,060 facts against 1,274, with a
+  median of 128 s per stay against 178 s, 2.4 h for the 64.
+- **The 9 stays of the given prediction:** the phenotype found on all 9 again.
+
 ## The first experiment
 
 Every number below comes from `run.R` at commit `efa56fe`, run from a clean tree
