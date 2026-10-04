@@ -1,5 +1,39 @@
 # Note: can the HAS grid be a page of rules over facts?
 
+## Read first (added 4 October 2026, after both seeds)
+
+**The verdict is about equal on the phenotype.** That is the reading fixed
+before each run. Seed 1 lost 0 of the 44 stays and seed 2 lost 3, and the worse
+seed decides. The sections below stay as they were written at the time. Three
+statements in them overstate the result:
+
+- **"About 1 time in 600"** (the first result) and the odds in the first
+  reading treat the 44 stays as 44 independent tries.
+- **"3 of 88 stay-runs against 12 of 88"** pools the stays the same way.
+- **"6 of 64 against 12 of 60"** compares the fact layer's two seeds with two
+  DENUT runs that differed in their aggression text. DENUT's like-for-like
+  seed repeat changed the phenotype on 3 of 22 stays. That compares
+  `…-closed-20261001-s1` with `…-closed-20261002-s2`. So the two shapes are about
+  as stable as each other.
+
+**The stays are not independent within a run.** The same seed went out with
+every request, so llama-server sampled every stay from the same random stream,
+and one seed tilts all 64 stays together. Seed 2 wrote fewer output tokens than
+seed 1 on 57 of the 64 stays, at a median ratio of 0.78. Its prompts were
+identical to seed 1's on all 64, matched by stay. DENUT + Bonsai's own seed 2
+was shorter on 12 of its 23 stays, at a median ratio of 0.99. So the direction
+depends on the prompt, but every stay shares the tilt. Each seed is one draw.
+The three stays seed 2 lost are among the shortest records: ranks 55, 59 and 62
+of 64 by input size.
+
+**For a future run,** derive each stay's seed from the stay and the run number,
+so that one run is 64 draws.
+
+**What the shape still offers** is traceability: every answer resolves to
+quoted facts. It also fails one fact at a time: a bad field costs one fact
+instead of a whole stay, and no stay failed in either seed. Neither is a gain in
+accuracy.
+
 ## The real test (written on 4 October 2026, before the run)
 
 Everything in the sections further down reads facts that luna had already
