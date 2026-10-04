@@ -45,6 +45,7 @@ carries the ids of the facts that decided it.
 | `extract_atomic.R` | asks the local model for atomic facts on the 64 stays, with a checkpoint per stay |
 | `every_fact.R` | a model producer of every fact the grid reads, from scratch; R reads its times and amounts and does the arithmetic |
 | `extract_every_fact.R` | asks the local model for every fact on the 64 stays, with a checkpoint per stay |
+| `compare.R` | the real test: the grid over those facts against DENUT + Bonsai, luna and the review |
 | `run.R` | builds the facts for the 64 test stays, evaluates the grid, compares |
 | `NOTE.md` | the answer |
 
@@ -69,6 +70,23 @@ Start-Process -FilePath "C:\Program Files\R\R-4.6.1\bin\Rscript.exe" `
 
 Without the extraction's checkpoint, `run.R` evaluates every variant except the
 ones over the model's atomic facts.
+
+The real test runs the same way, also against llama-server, and writes
+`every-fact-bonsai-64.rds`, `compare.log` (aggregates), `compare-report.txt`
+(quotes, stays local) and `compare-64.rds`:
+
+```powershell
+Start-Process -FilePath "C:\Program Files\R\R-4.6.1\bin\Rscript.exe" `
+  -ArgumentList "prototype/fact-layer/extract_every_fact.R", "all" `
+  -RedirectStandardOutput every.out -RedirectStandardError every.err -Wait -NoNewWindow
+Start-Process -FilePath "C:\Program Files\R\R-4.6.1\bin\Rscript.exe" `
+  -ArgumentList "prototype/fact-layer/compare.R" `
+  -RedirectStandardOutput compare.out -RedirectStandardError compare.err -Wait -NoNewWindow
+```
+
+It also reads DENUT + Bonsai's closed-list runs of 1 and 2 October
+(`bonsai2-27b-budget2048-23-…-closed-20261001-s1.rds` and
+`bonsai2-27b-budget2048-41-…-closed-20261002-s1.rds`).
 
 `run.R` stubs `redsan::doceds_onnx_spec()` for the session: the catalog
 records the trimmer's identity for audit only, no trimmer artifact is installed
