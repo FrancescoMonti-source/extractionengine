@@ -70,7 +70,48 @@ fact layer keeps that same rule, so it should lose stays the same way. It could
 do better in one place. DENUT failed three whole stays (#8, #48, #52) on a single
 empty field; here, a bad field fails one fact.
 
-**Result:** pending.
+**Result, run on 4 October.** The extraction is `every-fact-bonsai-64.rds`
+(question `e85da1a3`, chat settings `29aab700`, the same as both DENUT runs').
+The comparison is `compare.log`, from `compare.R` at `16ad89c` on a clean tree.
+Both are in the output folder named at the top of the next section.
+
+**Clearly better, by the reading fixed before the run.** On the 44 stays where
+luna found the phenotype and you judged the code justifiable, the fact layer
+found it on all 44. DENUT + Bonsai lost it on 5 and on 7. At DENUT's rate,
+losing none happens by chance about 1 time in 600. My expectation, about equal,
+was wrong.
+
+- **It does not lean on the new rules.** On 40 of the 44 stays, weight loss or
+  BMI established the phenotype. The other 4 rest on muscle, and so did luna's
+  answer on the same 4.
+- **It agrees with luna on 62 of the 64 phenotype answers.** The two DENUT runs
+  agree with luna on 56 of 61 and on 51 of 62. The two exceptions, #39 and #46,
+  are stays where the fact layer found a phenotype luna did not; you judged both
+  justifiable.
+- **No stay failed.** DENUT failed 3 stays outright (#8, #48, #52), each on a
+  single field of its form. Here a bad field costs one fact. R refused 313 of
+  the 1,274 facts the model gave, mostly conditions whose citations never name
+  their category, and every stay still kept enough facts to decide.
+- **A refused number was a wrong pointer, not an invention.** Of the 23
+  numbers refused because the fragment they cite does not hold them, 21 are
+  written elsewhere in the same stay. The model pointed at the wrong line.
+- **The 9 stays of the given prediction:** the fact layer found the phenotype on
+  all 9. DENUT's own next run found it on 8, so they show little.
+- **Same cost:** a median of 178 s per stay and 3.3 h for the 64, against 189 s
+  and 3.4 h for DENUT + Bonsai.
+
+**The diagnosis is not better, because of the etiology, not the phenotype.**
+Among the 48 stays you judged justifiable, the fact layer supports the diagnosis
+on 20, DENUT on 17 and on 20, and luna on 44. The aggression now follows the
+merged time rule and holds on 21 of the 64 stays. Luna's 64 came from the older
+wording, and from how this batch was picked. Intake is almost never
+established: the record rarely writes how much was eaten, for how long, and
+against what. Those are questions about the rules, and this test does not
+answer them.
+
+**What this cannot show.** It is one run of one seed. The threshold allows for
+DENUT's noise, not for the fact layer's own, which nobody has measured. A
+second seed would take another 3.3 h.
 
 ## The first experiment
 
@@ -312,7 +353,11 @@ judgement left to the model; the word check and the lab facts take it away.
 
 Whether to make the fact table the engine's output contract. I recommend yes,
 with the two conditions written into it: a stay with documents and no fact
-fails, and a category must be named in what its fact cites. The shape expressed
+fails, and a category must be named in what its fact cites. The real test at
+the top is the evidence that matters most. With the same local model and the
+same documents, the shape kept the phenotype on every stay where DENUT + Bonsai
+lost it. On the diagnosis it is no worse, and it is held back by the etiology
+rules, not by the shape. The shape expressed
 the whole grid, kept every answer of the existing pipeline, and with a local
 model extracting, it judged aggression as often as that model judging directly.
 Each answer can now be traced to quoted facts, and each error can be seen for
