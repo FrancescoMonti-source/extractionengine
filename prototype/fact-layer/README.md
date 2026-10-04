@@ -43,6 +43,8 @@ carries the ids of the facts that decided it.
 | `rules.R` | the rule combinators: the part that would move into the engine |
 | `grid.R` | the grid as rules over facts: the page to put beside `denut_extraction_specs.R` |
 | `extract_atomic.R` | asks the local model for atomic facts on the 64 stays, with a checkpoint per stay |
+| `every_fact.R` | a model producer of every fact the grid reads, from scratch; R reads its times and amounts and does the arithmetic |
+| `extract_every_fact.R` | asks the local model for every fact on the 64 stays, with a checkpoint per stay |
 | `run.R` | builds the facts for the 64 test stays, evaluates the grid, compares |
 | `NOTE.md` | the answer |
 

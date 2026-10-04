@@ -176,17 +176,24 @@ facts_atomic <- function(response, stay, index, producer, version) {
       "the category is not named in any fragment cited for it" else if (!stage_ok)
       "the stage is not in any fragment cited for it" else if (!duration_ok)
       "the duration is not in any fragment cited for it" else NA_character_
+    # When the producer dates the condition (every_fact.R does), the span is
+    # the days before admission it is dated to. A date its citations do not
+    # hold is dropped, not the condition.
+    when <- r$when %||% ""
+    when_ok <- transcribed(when, ev$quote)
+    span <- if (nzchar(trimws(when)) && when_ok) read_time(when, stay$admission) else c(NA_real_, NA_real_)
     id <- new_ids(1L)
     fact <- facts_frame(
       fact_id = id, PATID = stay$PATID, EVTID = stay$EVTID, concept = r$concept,
       value_chr = if (nzchar(trimws(r$stage))) r$stage else NA_character_,
       record_date = if (nrow(ev)) min(as.Date(ev$source_date)) else as.Date(NA),
+      span_lo = span[[1L]], span_hi = span[[2L]],
       negated = r$status == "excluded", hypothetical = r$status == "suspected",
       historical = r$status == "history", family = r$status == "family",
       activity = if (r$status %in% c("active", "stable")) r$status else NA_character_,
       onset = r$onset, derivation = "stated", source = "doceds", producer = producer,
       producer_version = version, status = if (is.na(reason)) "kept" else "refused",
-      reason = reason, note = r$label
+      reason = reason, note = if (nzchar(trimws(when)) && !when_ok) paste(r$label, "| date not in its citations") else r$label
     )
     evidence <- evidence_frame(
       fact_id = id, kind = "fragment", ELTID = ev$ELTID, record_ref = ev$prompt_record_id,
@@ -203,6 +210,7 @@ facts_atomic <- function(response, stay, index, producer, version) {
           fact_id = did, PATID = stay$PATID, EVTID = stay$EVTID, concept = "antibiotic_course",
           value = days, unit = "days", value_chr = r$duration,
           negated = fact$negated, hypothetical = fact$hypothetical, historical = fact$historical,
+          activity = fact$activity, onset = fact$onset, span_lo = fact$span_lo, span_hi = fact$span_hi,
           derivation = "derived", source = "facts", producer = "rule:duration_days",
           producer_version = "proto-1", note = r$label
         ),

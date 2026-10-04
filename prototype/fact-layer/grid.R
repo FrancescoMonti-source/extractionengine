@@ -19,11 +19,11 @@ grading <- function(q, ...) band(q, ..., upper_unless_refuted = TRUE)
 
 iotf <- function(curve) function(stay) iotf_cutoff(stay$age, stay$sex, curve)
 
-has_grid <- function(aggression = judged()) {
-  etiologic <- list(intake = judged(), absorption = judged(), aggression = aggression)
+has_grid <- function(aggression = judged(), intake = judged(), absorption = judged(), muscle = judged()) {
+  etiologic <- list(intake = intake, absorption = absorption, aggression = aggression)
   list(
     adult = band_rules(age = c(18, 70),
-      phenotypic = list(loss = losing(5, 10, 10), imc = bmi < 18.5, muscle = judged()),
+      phenotypic = list(loss = losing(5, 10, 10), imc = bmi < 18.5, muscle = muscle),
       etiologic  = etiologic,
       moderate   = list(imc = band(bmi, above = 17, below = 18.5),
                         loss = any_of(grading(loss_1m, from = 5, below = 10),
@@ -33,7 +33,7 @@ has_grid <- function(aggression = judged()) {
       severe     = list(imc = bmi <= 17, loss = losing(10, 15, 15), albumin = albumin <= 30)),
 
     age70 = band_rules(age = c(70, Inf),
-      phenotypic = list(loss = losing(5, 10, 10), imc = bmi < 22, muscle = judged()),
+      phenotypic = list(loss = losing(5, 10, 10), imc = bmi < 22, muscle = muscle),
       etiologic  = etiologic,
       moderate   = list(imc = band(bmi, from = 20, below = 22),
                         loss = any_of(grading(loss_1m, from = 5, below = 10),
@@ -44,7 +44,7 @@ has_grid <- function(aggression = judged()) {
 
     child = band_rules(age = c(0, 18),
       phenotypic = list(loss = losing(5, 10, 10), imc = bmi < iotf("185"),
-                        channel = judged(), muscle = judged()),
+                        channel = judged(), muscle = muscle),
       etiologic  = etiologic,
       moderate   = list(imc = band(bmi, above = iotf("17"), below = iotf("185")),
                         loss = any_of(grading(loss_1m, from = 5, upto = 10),
@@ -85,11 +85,21 @@ ckd_4_5 <- function(s) {
     "^.*?(dfg|clairance|filtration|mdrd|ckd.?epi)\\D{0,20}?([0-9]+([.,][0-9]+)?).*$", "\\2", fold(s), perl = TRUE))))
   grepl("^n18[45]|stade\\W{0,6}(4|5|iv|v)\\b|<\\s*30", fold(s)) | (gfr < 30) %in% TRUE
 }
+# The acute branch in time, as the merged text has it (redsan-coding 13c92ea):
+# the aggression began before admission and is still active then, or it is
+# dated inside the period a documented weight loss is measured over. An
+# undated history, or one older than that period, does not count; one that
+# began during the stay would count only for a loss measured after it, which
+# no fact here measures.
+ACUTE <- c("sepsis", "icu_organ_failure", "major_surgery", "major_trauma_or_burn",
+           "severe_pancreatitis", "diabetic_crisis", "deep_infection")
 aggression_branches <- list(
-  acute     = any_of(has(c("sepsis", "icu_organ_failure", "major_surgery", "major_trauma_or_burn",
-                           "severe_pancreatitis", "diabetic_crisis", "deep_infection"),
-                         !historical & !onset %in% "during_stay"),
-                     has("antibiotic_course", value >= 21 & !historical)),  # "plusieurs semaines": 3+
+  acute     = any_of(has(ACUTE, onset %in% c("before_admission", "at_admission") & activity %in% "active"),
+                     dated_within(ACUTE, over = "weight_loss"),
+                     # "plusieurs semaines" read as 21 days or more: PROVISIONAL.
+                     has("antibiotic_course", value >= 21 & onset %in% c("before_admission", "at_admission") &
+                           activity %in% "active"),
+                     dated_within("antibiotic_course", over = "weight_loss", value >= 21)),
   chronic   = any_of(has("heart_failure", nyha_3_4(value_chr)), has("copd", gold_3_4(value_chr)),
                      has("chronic_kidney_disease", ckd_4_5(value_chr)),
                      has(c("cardiac_cachexia", "repeated_hf_decompensation", "home_oxygen_or_niv",
@@ -99,3 +109,32 @@ aggression_branches <- list(
   malignant = has("malignancy", !historical & !not_invasive(value_chr))
 )
 aggression_from_facts <- do.call(any_of, aggression_branches)
+
+# Intake, as the fiche and redsan-coding's instruction read it: 50 % or more for
+# over a week, or any reduction for over two weeks, against habitual intake or
+# needs; or artificial feeding started because eating by mouth failed. A
+# statement that intake is preserved refutes it; a dietitian's box alone is
+# neither, since it carries no amount and no duration.
+intake_from_facts <- unless_denied(any_of(
+  has("artificial_feeding_for_oral_failure"),
+  has("intake_reduction", value >= 50 & span_lo > 7 & value_chr %in% c("habitual", "needs")),
+  has("intake_reduction", span_lo > 14 & (is.na(value) | value > 0) & value_chr %in% c("habitual", "needs"))
+), "intake_reduction")
+
+# Absorption: a cause of maldigestion or malabsorption the record names.
+absorption_from_facts <- has(paste0("absorption:", c("exocrine_pancreatic_insufficiency",
+  "inflammatory_bowel_disease", "intestinal_resection_or_bypass", "short_bowel", "coeliac_disease",
+  "cholestasis", "diarrhoea", "steatorrhoea", "other")), !historical)
+
+# Muscle: one measurement below the HAS threshold for its method and the
+# patient's sex (HAS 2019, p. 111), or any measurement the record itself calls
+# reduced. A normal measurement refutes; an unmeasured method says nothing.
+sexed <- function(male, female) function(stay) {
+  if (identical(stay$sex, "M")) male else if (identical(stay$sex, "F")) female else NA_real_
+}
+muscle_from_facts <- any_measured(
+  lowest("muscle:grip_strength") < sexed(26, 16),  lowest("muscle:gait_speed") < 0.8,
+  lowest("muscle:ct_l3") < sexed(52.4, 38.5),      lowest("muscle:bia_smi") < sexed(7.0, 5.7),
+  lowest("muscle:bia_ffmi") < sexed(17, 15),       lowest("muscle:dexa_asmi") < sexed(7.23, 5.67),
+  has("muscle:reduced")
+)

@@ -163,6 +163,52 @@ has <- function(concepts, where = NULL, at_least = 1L, distinct = NULL) {
   })
 }
 
+# Is an affirmed fact of `concepts` dated inside the period a fact of `over`
+# measures? A condition's span is the days before admission it is dated to; a
+# timed change's span is the days it covers, ending at admission. Met when the
+# condition surely falls inside a positive change's period; presence-only.
+dated_within <- function(concepts, over, where = NULL) {
+  where <- substitute(where)
+  env <- parent.frame()
+  criterion(function(ctx) {
+    f <- ctx$facts
+    x <- f[f$concept %in% concepts & !f$negated & !f$hypothetical & !f$family & !is.na(f$span_hi), , drop = FALSE]
+    if (!is.null(where) && nrow(x)) x <- x[eval(where, x, env) %in% TRUE, , drop = FALSE]
+    p <- f[f$concept %in% over & !f$negated & f$reference %in% "timed" & !is.na(f$span_lo) & (f$value > 0) %in% TRUE, , drop = FALSE]
+    if (!nrow(x) || !nrow(p)) return(answer("unknown"))
+    inside <- which(outer(x$span_hi, p$span_lo, `<=`), arr.ind = TRUE)
+    if (!nrow(inside)) return(answer("unknown"))
+    answer("met", c(x$fact_id[inside[, 1L]], p$fact_id[inside[, 2L]]))
+  })
+}
+
+# A presence rule that a statement of absence can refute: met when `rule` is;
+# not_met when every fact of `concepts` is a negated one; otherwise what `rule`
+# said. Silence still refutes nothing.
+unless_denied <- function(rule, concepts) {
+  criterion(function(ctx) {
+    a <- evaluate(rule, ctx)
+    if (a$state == "met") return(a)
+    f <- ctx$facts[ctx$facts$concept %in% concepts & !ctx$facts$hypothetical & !ctx$facts$family, , drop = FALSE]
+    if (nrow(f) && all(f$negated)) answer("not_met", f$fact_id) else a
+  })
+}
+
+# any_of over what was measured: a part no fact speaks to is left out instead
+# of being read as unknown, so that one normal measurement can refute.
+any_measured <- function(...) {
+  parts <- list(...)
+  criterion(function(ctx) {
+    r <- lapply(parts, evaluate, ctx)
+    r <- r[vapply(r, function(a) length(a$facts) > 0L, NA)]
+    if (!length(r)) return(answer("unknown"))
+    s <- vapply(r, `[[`, "", "state")
+    state <- kleene_or(s)
+    decided <- switch(state, met = r[s == "met"], unknown = r[s == "unknown"], not_met = r)
+    answer(state, unlist(lapply(decided, `[[`, "facts")))
+  })
+}
+
 # The model's own judgement of this criterion, read from where the grid puts
 # it. The one place a rule reads an answer instead of computing one.
 judged <- function() {

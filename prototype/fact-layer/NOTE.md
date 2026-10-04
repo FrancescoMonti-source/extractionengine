@@ -1,5 +1,79 @@
 # Note: can the HAS grid be a page of rules over facts?
 
+## The real test (written on 4 October 2026, before the run)
+
+Everything in the sections further down reads facts that luna had already
+extracted. Matching luna's 512 values only shows that nothing was lost in the
+repackaging. It is a no-regression check, not a result. The real test extracts
+every fact from scratch with the local model, and compares the result with
+DENUT + Bonsai on the same 64 stays, the same documents and the same settings.
+
+**What runs.** `extract_every_fact.R` asks Ternary-Bonsai-2-27B on the local
+llama-server (seed 1, 2048 thinking tokens) for every fact the grid reads:
+
+- weights, with their date or their reference (usual, before the illness);
+- heights, and the BMIs and weight losses the record writes;
+- intake, artificial feeding, absorption and muscle measurements;
+- the aggression's conditions, with their dates.
+
+The model copies numbers and words and cites them. R reads the times and the
+amounts, and does every calculation (`every_fact.R`). Albumin comes from the
+lab table. No luna fact is used. The contract applies: a stay with documents
+and no fact fails, and a category or a qualifier must be named in what its fact
+cites. The grid now computes intake, absorption and muscle from facts too, so
+the model judges no criterion.
+
+**The aggression's time rule**, fixed before the run as the merged DENUT text
+has it (redsan-coding `13c92ea`). An acute aggression counts if it began before
+admission and is still active at admission. It also counts if it is dated
+inside the period over which a documented weight loss is measured. Antibiotics
+for "plusieurs semaines" are read as 21 days or more, provisionally.
+
+**The prediction I was given, and why it cannot decide.** It said: "the fact
+layer recovers the phenotype on most of the 9 stays where DENUT + Bonsai lost
+it by filling the form badly." Those 9 stays are #16, #23, #28, #36, #44, #51,
+#57, #61 and #63. They are where the closed-list run of 1–2 October lost a
+phenotype that luna found.
+
+The next DENUT + Bonsai run, the catabolism run of 2 October, asked the same
+phenotype question; only the aggression wording had changed. It already found
+the phenotype on 8 of the 9. Only #51 stayed lost, and you judged #51 not
+justifiable. Among the stays you judged justifiable, the two runs' losses do not
+overlap at all. Stays picked because one run failed on them will do better on
+the next run whatever is tested, like patients picked for one high
+blood-pressure reading. I will report the 9, but they cannot separate the two
+shapes.
+
+**The reading, decided now.** Take the 44 stays where luna established the
+phenotype and you judged the code justifiable. For each method, count how many
+of them it leaves without the phenotype: unknown, not met, or failed. DENUT +
+Bonsai left 5 in the catabolism run and 7 in the closed-list run, on different
+stays each time: about 6 of 44.
+
+- **Clearly better, the shape earns its place:** 0 or 1 lost.
+- **About equal, its value is only traceability and generality:** 2 to 10 lost.
+- **Worse, rethink it:** 11 or more lost.
+
+At DENUT's rate, 1 or fewer happens by chance about 1 time in 80, and 11 or
+more about 1 time in 32. Anything between them, one run cannot separate from
+DENUT. This test can only see a large difference.
+
+**Reported beside it, with no threshold:** stay by stay, the phenotype and
+etiology axes, the diagnosis and the severity. Each is compared with both DENUT
+runs, with luna r2 and with your decision column. Bonsai changes 12 of 60
+phenotype answers between its two DENUT runs. A smaller difference between the
+fact layer and DENUT means nothing.
+
+**My own expectation: about equal.** Most of DENUT's losses are grounding
+refusals: a number or a duration missing from the fragment the model cited. The
+fact layer keeps that same rule, so it should lose stays the same way. It could
+do better in one place. DENUT failed three whole stays (#8, #48, #52) on a single
+empty field; here, a bad field fails one fact.
+
+**Result:** pending.
+
+## The first experiment
+
 Every number below comes from `run.R` at commit `efa56fe`, run from a clean tree
 over the 64 test stays, except where a number is marked as before the contract
 (commit `7b77222`). The results are in
@@ -12,7 +86,7 @@ run it is compared against: seed 1, 2048 thinking tokens. No document left the
 machine. `report.txt`, in the same folder, shows each stay's facts, quotes and
 decisions, for a reader on this machine.
 
-## The answer
+## The answer from the first experiment
 
 **Yes, with two conditions.**
 
