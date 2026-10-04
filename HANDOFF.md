@@ -3188,3 +3188,48 @@ Search handles for the grounding half: *attributed question answering*, *AIS
   cheap now and expensive after the first outside reader.
 
 **Files changed.** This entry only.
+
+## Fact-layer prototype, archived -- Claude (2026-10-04)
+
+**Where.** Tag `archive/fact-layer-prototype-2026-10-04` (PR #2, closed
+unmerged). Start with `prototype/fact-layer/NOTE.md`, section "Read first". The
+OMOP/Capr confrontation of 2026-09-15, never merged, is tag
+`archive/omop-capr-confrontation-2026-09-15`. Read both for the shape when
+the engine is rebuilt; the rebuild writes its own code.
+
+**The question**, following the entry of 2026-08-28: can a fact table with
+rules on top express the HAS denutrition grid more simply than today's API,
+while keeping grounded citations, the refusal contract and lineage for facts
+read from text?
+
+**What it found.**
+
+- The grid is 75 lines of R (`grid.R`) over 146 lines of generic rules
+  (`rules.R`). In redsan-coding it is `denut_grid.R` (377 lines) plus the
+  selection code.
+- A local model, Bonsai 2 27B, extracted every fact the grid reads on 64 real
+  stays, with two seeds. On the phenotype the fact layer is about equal to
+  DENUT + Bonsai. The diagnosis is no better: the etiology rules hold it back,
+  not the shape.
+- Its gain is traceability, every answer resolving to quoted facts, and failure
+  one fact at a time: a bad field costs one fact, not a whole stay.
+- Gap 2 of the 2026-08-28 entry has an answer: a derived value is owned by the
+  rule that computed it, and its evidence is its operands.
+- The contract needed two conditions. A stay with documents and no fact fails.
+  A category is a claim, so its word must be in what the fact cites.
+
+**Lessons for the rebuild.**
+
+- One seed sent with every request puts every stay in a run on the same random
+  stream, so a run is one draw. Derive the seed per stay.
+- Silence is still unsolved. A near-empty answer passes the "no fact means
+  failure" check, and that is how seed 2 lost its three stays.
+
+**Outside git.** The extractions and reports hold patient text. They stay on
+the owner's PC in `%APPDATA%/R/data/R/extractionengine/fact-layer-prototype/`,
+beside the three session handoffs that led to it.
+
+**Open question.** Whether the fact table becomes the engine's output contract.
+The owner has not decided.
+
+**Files changed.** This entry only.
