@@ -1,7 +1,12 @@
 # Slice 1: the patient's weight
 
-Status: a design on one page, for review. No code exists. Lines marked
-**[assumed]** are my choices and need the owner's confirmation.
+Status on 15 November 2026: **implemented, never run.** The code passes its
+tests on invented documents. It has never met ellmer, a model, or a warehouse
+document: the container it was written in has none of the three. The first run
+on the owner's PC is the first test, and what it shows is the finding. Lines
+marked **[assumed]** are my choices and need the owner's confirmation.
+
+How to run it: `scripts/slice1.R`.
 
 ## Why this slice
 
@@ -40,10 +45,11 @@ Four tables, written outside the git tree.
 
 | table | one row per | holds |
 | --- | --- | --- |
-| `weights` | weight found | the value, its role, its date, the quoted fragment, the document |
-| `values` | stay | the illustration rule's result, or "unknown" |
-| `refused` | weight refused | the value, the reason, the quoted fragment |
-| `run` | run | model and settings, code commit, clean tree or not, a digest of the documents read, the date |
+| `weights` | weight found | the value in kg, as written, its role, the words dating it |
+| `evidence` | citation | the quoted fragment and its document, for one weight |
+| `refused` | weight refused | the value, the reason, the quoted fragments |
+| `stays` | stay | what happened (found, none found, failed), a digest of the documents read, the seed, the model |
+| `run` | run | the label, the question's digest, the code commit, clean tree or not, the date |
 
 ## How each promise is met
 
@@ -52,26 +58,35 @@ written by hand. No AI writes it yet.
 
 **2. Every value has its evidence.** The model points at a fragment it was
 shown. The code quotes it. The number must appear in that fragment, or the
-weight is refused and recorded. A value outside 20 to 300 kg is refused.
-**[assumed]** A stay with documents and an answer the code cannot read fails.
-A stay with no weight found answers "unknown", never "no weight".
+weight is refused and recorded. A value outside 0.3 to 400 kg is refused: the
+corpus holds children, so the floor is a very premature newborn. **[assumed]**
+A stay with documents and an answer the code cannot read fails. A stay where
+nothing was found although a crude text screen sees something like a weight
+gets its own status, so it is counted and read.
 
-**3. Reliability is measured.** This is the new part. After a run, the code
-draws a sample and writes a review sheet:
+**3. Reliability is measured.** This is the new part. 80 stays are drawn at
+random, with a seed, **before** any run. **[assumed]** The reviewer gets two
+files: a page with the documents of each stay, and a sheet. For each stay he
+writes **the true answer**: every weight written, with its role, or "none
+written". He never sees what the pipeline answered.
 
-- 40 stays where a weight was found. **[assumed]**
-- 40 stays where none was found. **[assumed]**
-
-For each stay the reviewer writes **the true answer**: every weight written,
-with its role, or "none written". For found stays the sheet shows the quote. For the others it
-shows the documents, and the reviewer does not see what the pipeline answered.
+An earlier version of this page drew 40 stays where a weight was found and 40
+where none was. That was wrong three ways. It needs the run first. It tells
+the reviewer what the run answered. And it distorts recall, because the stays
+are no longer a fair picture of the corpus.
 
 The code then reports, with the date and the run it applies to:
 
-- precision: of the weights found, how many are right, value and role;
-- recall on the sample: of the weights truly written, how many were found;
-- an honest interval. With 40 stays, an observed 36 of 40 means "between about
-  77 % and 96 %". Small samples give wide intervals, and the report says so.
+- precision: of the values found, how many are in the reviewer's answers;
+- recall: of the values the reviewer wrote, how many were found;
+- how often the role is right when the value is;
+- an honest interval. An observed 36 of 40 means "between about 77 % and
+  96 %". Small samples give wide intervals, and the report says so.
+
+Each disagreement is listed with its quote, to be read one by one. When the
+reviewer finds that the run was right and he missed a weight, he adds it to the
+sheet with `basis = adjudicated`. The report counts those answers apart: they
+were written after looking at a run, so they are not blind.
 
 **4. The measure can be redone.** The reviewer's answers are the truth about
 the documents, not an opinion about one run. They are stored apart from any
@@ -96,8 +111,8 @@ a spreadsheet, as in September.
 
 1. The owner runs it on about 80 stays of the denutrition corpus.
 2. He fills the review sheet.
-3. The report prints one line such as: weight, precision 36 of 40, recall 31 of
-   40, noise 3 of 80, run X, date Y.
+3. The report prints lines such as: precision 36 of 40, recall 36 of 45, the
+   set of weights changed on 3 of 80 stays, run X, date Y.
 4. A second run is scored against the same sheet without new review.
 
 The numbers in line 3 are invented, to show the shape.
@@ -111,7 +126,8 @@ one or two minutes each.
 
 ## Open points for the owner
 
-- Where the new project lives, and its name. I cannot create a repository.
-- 40 and 40 stays is accepted as the review load for a first measure.
-- Which lessons of `LESSONS.md` this slice must already respect. My reading:
-  1 to 5, 8, 11, 14 to 16, 19, 24 to 26, 28 and 34.
+- 80 stays is accepted as the review load for a first measure.
+- The bounds 0.3 to 400 kg.
+- Temperature. Two runs measure noise only if the model is allowed to vary, so
+  the launch script leaves the server's default. If the owner prefers
+  temperature 0, noise will read near zero and mean nothing.
