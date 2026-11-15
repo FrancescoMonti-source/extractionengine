@@ -14,14 +14,19 @@ It is deliberately too small to be useful. Its job is to prove the loop.
 
 ## The question
 
-For each stay: which weights, in kg, do the documents write? And which one is
-the weight measured during this stay?
+For each stay: which weights, in kg, do the documents write?
 
-- **Found** (a concept): every weight written, with its role. The roles are
-  `current` (measured during this stay) and `other` (usual, earlier, before
-  the illness).
-- **Decided** (one rule): `weight_current_kg` is the `current` weight from the
-  earliest-dated document. **[assumed]**
+The slice builds and measures the **concept** only: every weight written, each
+with its value, its role and its date when one is written. The roles are
+`current` (measured during this stay), `usual`, `before_illness` and `earlier`.
+
+Which weight counts is not part of the concept. It depends on the question, and
+several weights may count: quantifying a weight loss needs at least two. That
+choice is a **rule**, and it belongs to each protocol. The owner settled this on
+15 November 2026.
+
+One rule is included as an illustration, and it is not measured:
+`weight_current_kg` is the `current` weight from the earliest-dated document.
 
 ## What goes in
 
@@ -35,8 +40,8 @@ Four tables, written outside the git tree.
 
 | table | one row per | holds |
 | --- | --- | --- |
-| `values` | stay | `weight_current_kg`, or "unknown" |
-| `evidence` | weight found | the value, its role, the quoted fragment, the document |
+| `weights` | weight found | the value, its role, its date, the quoted fragment, the document |
+| `values` | stay | the illustration rule's result, or "unknown" |
 | `refused` | weight refused | the value, the reason, the quoted fragment |
 | `run` | run | model and settings, code commit, clean tree or not, a digest of the documents read, the date |
 
@@ -57,13 +62,13 @@ draws a sample and writes a review sheet:
 - 40 stays where a weight was found. **[assumed]**
 - 40 stays where none was found. **[assumed]**
 
-For each stay the reviewer writes **the true answer**: the right weight, or
-"none written". For found stays the sheet shows the quote. For the others it
+For each stay the reviewer writes **the true answer**: every weight written,
+with its role, or "none written". For found stays the sheet shows the quote. For the others it
 shows the documents, and the reviewer does not see what the pipeline answered.
 
 The code then reports, with the date and the run it applies to:
 
-- precision: of the weights found, how many are right;
+- precision: of the weights found, how many are right, value and role;
 - recall on the sample: of the weights truly written, how many were found;
 - an honest interval. With 40 stays, an observed 36 of 40 means "between about
   77 % and 96 %". Small samples give wide intervals, and the report says so.
@@ -107,8 +112,6 @@ one or two minutes each.
 ## Open points for the owner
 
 - Where the new project lives, and its name. I cannot create a repository.
-- Whether `earliest current weight` is the right rule, or the lowest, or the
-  admission weight only.
-- Whether 40 and 40 is an acceptable review load for a first measure.
+- 40 and 40 stays is accepted as the review load for a first measure.
 - Which lessons of `LESSONS.md` this slice must already respect. My reading:
   1 to 5, 8, 11, 14 to 16, 19, 24 to 26, 28 and 34.
